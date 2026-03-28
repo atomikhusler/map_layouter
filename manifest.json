@@ -1,0 +1,27 @@
+{
+  "name": "Layout Map Drafter - Census 2027",
+  "short_name": "Map Drafter",
+  "description": "Official Field Drafting Tool for Census 2027 HLO",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#111827",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "permissions": [
+    "geolocation"
+  ]
+}
