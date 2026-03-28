@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.png" width="250" alt="Map Layout Drafter Logo">
+  <img src="logo.png" width="250" alt="MAP LAYOUT DRAFTER Logo">
 </p>
 
-<h1 align="center">Map Layout Drafter</h1>
+<h1 align="center">MAP LAYOUT DRAFTER</h1>
 <p align="center">
   <em>The Professional-Grade GIS Utility for Precision Field Mapping</em>
 </p>
