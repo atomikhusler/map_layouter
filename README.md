@@ -1,4 +1,18 @@
-# 🗺️ Map Layout Drafter
+<p align="center">
+  <img src="assets/logo.png" width="250" alt="Map Layout Drafter Logo">
+</p>
+
+<h1 align="center">Map Layout Drafter</h1>
+<p align="center">
+  <em>The Professional-Grade GIS Utility for Precision Field Mapping</em>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Version-1.2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Platform-PWA%20/%20Web-orange" alt="Platform">
+  <img src="https://img.shields.io/badge/Status-Operational-success" alt="Status">
+</p>
+
 ### *The Professional-Grade GIS Utility for Precision Field Mapping*
 
 ![App Version](https://img.shields.io/badge/Version-1.2.0-blue)
