@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lmd-field-cache-v5'; // CRITICAL: Bumped to v5 to force cache refresh
+const CACHE_NAME = 'lmd-field-cache-v7'; // CRITICAL: Bumped to V7 to force total system update
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -7,17 +7,18 @@ const ASSETS_TO_CACHE = [
     './js/app.js',
     './js/config.js',
     './js/map.js',
-    './js/symbol.js', // FIXED TYPO: Removed the 's'
+    './js/symbol.js', 
     './js/storage.js',
+    './js/projectManager.js', // ELITE FIX: The new V7 module must be cached for offline use!
     './js/export.js',
-    './logo.png' // Added missing logo for offline viewing
+    './logo.png' 
 ];
 
 // Install Event - Pre-cache core files
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            console.log('[Service Worker] Caching Sprint 5 App Shell');
+            console.log('[Service Worker] Caching V7 Master App Shell');
             return cache.addAll(ASSETS_TO_CACHE);
         })
     );
@@ -26,7 +27,7 @@ self.addEventListener('install', (event) => {
 
 // Fetch Event - Network first for Map Tiles & CDNs, Cache first for App Shell
 self.addEventListener('fetch', (event) => {
-    // Strategy for Map Tiles and External CDNs (Tailwind, jsPDF, html2canvas)
+    // Strategy for Map Tiles and External CDNs
     if (event.request.url.includes('mt.google.com') || 
         event.request.url.includes('unpkg.com') ||
         event.request.url.includes('cdn.tailwindcss.com') ||
@@ -37,7 +38,6 @@ self.addEventListener('fetch', (event) => {
                 const cachedResponse = await cache.match(event.request);
                 if (cachedResponse) return cachedResponse;
                 
-                // If not cached, fetch from network and save to cache
                 try {
                     const networkResponse = await fetch(event.request);
                     cache.put(event.request, networkResponse.clone());
@@ -64,15 +64,15 @@ self.addEventListener('activate', (event) => {
         caches.keys().then((cacheNames) => {
             return Promise.all(
                 cacheNames.map((cache) => {
-                    // Delete any old caches that don't match our new v5 name
+                    // Instantly hunt down and destroy the old v5 cache
                     if (cache !== CACHE_NAME && cache !== 'lmd-map-tiles') {
-                        console.log(`[Service Worker] Deleting old cache: ${cache}`);
+                        console.log(`[Service Worker] Eradicating obsolete cache: ${cache}`);
                         return caches.delete(cache);
                     }
                 })
             );
         }).then(() => {
-            return self.clients.claim(); // Take control of all pages immediately
+            return self.clients.claim(); 
         })
     );
 });
