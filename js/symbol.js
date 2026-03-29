@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Elite Drafting Engine (Sprint 5 Master - Patched)
- * Features: Long-Press Naming, Fat Hit-Boxes (0.01 Opacity), Rubber-Band Lines.
+ * MAP LAYOUT DRAFTER - Elite Drafting Engine (Sprint 5 Master)
+ * Features: Double-Tap Edit, SVG Triangles, Circle Landmarks, Parallel Pathways.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
@@ -25,11 +25,11 @@ export function initSymbols() {
     setupMapClickRouter();
     initInspectorUI();
     
-    // Smooth dynamic scaling bound to map events (Anti-Fly Math)
+    // Smooth dynamic scaling bound to map events
     map.on('zoom', scaleDraftSymbols);
     map.on('zoomend', scaleDraftSymbols);
 
-    console.log("[Drafting Engine] V5 Initialized: Long-Press & Hit-Box Physics Online.");
+    console.log("[Drafting Engine] V5 Initialized: Double-Tap & Elite Vectors Online.");
 }
 
 // ==========================================
@@ -88,44 +88,28 @@ function setupMapClickRouter() {
 }
 
 // ==========================================
-// 2. LONG-PRESS (TAP-AND-HOLD) ENGINE
+// 2. DOUBLE-TAP EDIT & FEATURE EVENTS
 // ==========================================
 function bindFeatureEvents(layer, featureData) {
-    let pressTimer;
-
-    const startPress = (e) => {
-        if (e.originalEvent && e.originalEvent.touches && e.originalEvent.touches.length > 1) return;
-        
-        pressTimer = setTimeout(() => {
-            handleLongPress(featureData, layer);
-        }, 600); 
-    };
-
-    const cancelPress = () => { clearTimeout(pressTimer); };
-
-    layer.on('mousedown', startPress);
-    layer.on('touchstart', startPress);
-    
-    layer.on('mouseup', cancelPress);
-    layer.on('mouseleave', cancelPress);
-    layer.on('touchend', cancelPress);
-    layer.on('touchmove', cancelPress);
-
     layer.on('click', () => handleFeatureTap(featureData, layer));
+    
+    // ELITE FIX: Double-Tap is much more reliable on Android than Long-Press
+    layer.on('dblclick', () => handleRename(featureData, layer));
 }
 
-function handleLongPress(feature, layer) {
+function handleRename(feature, layer) {
     if (feature.category === CATEGORIES.LANDMARK || feature.category === CATEGORIES.LINE) {
-        const newName = prompt(`Enter name for this ${feature.category}:`, feature.label.replace(/\[|\]/g, ''));
+        const rawName = feature.label.replace(/\[|\]/g, '');
+        const newName = prompt(`Rename ${feature.category}:`, rawName);
+        
         if (newName && newName.trim() !== "") {
             feature.label = `[${newName.trim()}]`;
             
             if (feature.category === CATEGORIES.LANDMARK) {
-                const iconHtml = `<div class="font-bold text-sm text-black whitespace-nowrap drop-shadow-md text-shadow-white">${feature.label}</div>`;
-                const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
-                layer.setIcon(L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] }));
+                layer.setIcon(generateLandmarkIcon(feature.label));
                 scaleDraftSymbols();
             } else if (feature.category === CATEGORIES.LINE) {
+                // Flash the line blue to confirm edit
                 layer.eachLayer(l => {
                     if (l.options.color === '#000' || l.options.color === '#4b5563') {
                         const originalColor = l.options.color;
@@ -140,20 +124,43 @@ function handleLongPress(feature, layer) {
 }
 
 // ==========================================
-// 3. SILENT PLACEMENT (No Prompts)
+// 3. ELITE VECTOR GENERATORS (Buildings & Landmarks)
 // ==========================================
+
+// Utility to extract initials (e.g. "School 1" -> "S1")
+function getInitials(fullName) {
+    const raw = fullName.replace(/\[|\]/g, '').trim();
+    const parts = raw.split(' ');
+    let initials = parts[0].charAt(0).toUpperCase();
+    if (parts.length > 1) {
+        const lastPart = parts[parts.length - 1];
+        if (!isNaN(lastPart)) initials += lastPart; // Append number if it ends in one
+        else initials += lastPart.charAt(0).toUpperCase(); // Append letter
+    }
+    return initials.substring(0, 3); // Max 3 chars inside the circle
+}
+
+function generateLandmarkIcon(fullName) {
+    const initials = getInitials(fullName);
+    const iconHtml = `<div class="w-8 h-8 rounded-full border-[2px] border-black bg-white shadow-md flex items-center justify-center font-black text-xs text-black">${initials}</div>`;
+    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
+    return L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
+}
+
 function generateBuildingIcon(tool, bldgNo, houseCount) {
     let iconHtml = '';
-    const hatchStyle = `background: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px);`;
+    const hatch = `background: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px);`;
 
     if (tool === TOOLS.PUCCA_RES) {
-        iconHtml = `<div class="w-8 h-8 border-[3px] border-black bg-white shadow flex items-center justify-center font-bold text-sm">${bldgNo}</div><div class="text-[10px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
+        iconHtml = `<div class="w-7 h-7 border-[2px] border-black bg-white shadow flex items-center justify-center font-bold text-xs">${bldgNo}</div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     } else if (tool === TOOLS.PUCCA_NON_RES) {
-        iconHtml = `<div class="w-8 h-8 border-[3px] border-black shadow flex items-center justify-center font-bold text-sm bg-white" style="${hatchStyle}"><span class="bg-white/90 px-1 rounded">${bldgNo}</span></div><div class="text-[10px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
+        iconHtml = `<div class="w-7 h-7 border-[2px] border-black shadow flex items-center justify-center font-bold text-xs bg-white" style="${hatch}"><span class="bg-white/90 px-[1px] rounded">${bldgNo}</span></div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     } else if (tool === TOOLS.KUTCHA_RES) {
-        iconHtml = `<div class="relative w-0 h-0 border-l-[16px] border-r-[16px] border-b-[28px] border-l-transparent border-r-transparent border-b-black drop-shadow"><div class="absolute top-[8px] -left-[6px] text-[10px] font-bold text-white">${bldgNo}</div></div><div class="text-[10px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
+        // ELITE FIX: True Hollow SVG Triangle
+        iconHtml = `<div class="relative w-8 h-8 flex items-center justify-center drop-shadow"><svg width="28" height="28" viewBox="0 0 28 28" class="absolute inset-0"><polygon points="14,2 26,26 2,26" fill="white" stroke="black" stroke-width="2"/></svg><span class="relative z-10 text-[9px] font-bold text-black mt-2">${bldgNo}</span></div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     } else if (tool === TOOLS.KUTCHA_NON_RES) {
-        iconHtml = `<div class="relative w-0 h-0 border-l-[16px] border-r-[16px] border-b-[28px] border-l-transparent border-r-transparent border-b-black drop-shadow"><div class="absolute top-[2px] -left-[12px] w-[24px] h-[24px]" style="${hatchStyle}"></div><div class="absolute top-[8px] -left-[6px] text-[10px] font-bold bg-white/90 text-black px-[2px] rounded">${bldgNo}</div></div><div class="text-[10px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
+        // ELITE FIX: True Hatched SVG Triangle
+        iconHtml = `<div class="relative w-8 h-8 flex items-center justify-center drop-shadow"><svg width="28" height="28" viewBox="0 0 28 28" class="absolute inset-0"><defs><pattern id="hatch" width="4" height="4" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="4" stroke="black" stroke-width="1"/></pattern></defs><polygon points="14,2 26,26 2,26" fill="url(#hatch)" stroke="black" stroke-width="2"/><polygon points="14,2 26,26 2,26" fill="transparent" stroke="black" stroke-width="2"/></svg><span class="relative z-10 text-[9px] font-bold text-black bg-white/90 px-[2px] rounded mt-2">${bldgNo}</span></div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     }
 
     const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
@@ -163,7 +170,7 @@ function generateBuildingIcon(tool, bldgNo, houseCount) {
 function placeBuilding(latlng, tool) {
     const featureId = `bldg_${Date.now()}`;
     const bNo = currentBldgNo.toString();
-    const hC = "1"; // Default
+    const hC = "1";
 
     const divIcon = generateBuildingIcon(tool, bNo, hC);
     const marker = L.marker(latlng, { icon: divIcon }).addTo(featureLayer);
@@ -179,14 +186,11 @@ function placeBuilding(latlng, tool) {
 
 function placeLandmark(latlng, tool) {
     const featureId = `lm_${Date.now()}`;
-    let baseName = tool === TOOLS.LM_CUSTOM ? "Landmark" : tool.replace('lm_', '');
+    let baseName = tool === TOOLS.LM_CUSTOM ? "Landmark 1" : tool.replace('lm_', '');
     baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
     
     const label = `[${baseName}]`;
-    const iconHtml = `<div class="font-bold text-sm text-black whitespace-nowrap drop-shadow-md text-shadow-white">${label}</div>`;
-    
-    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
-    const divIcon = L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
+    const divIcon = generateLandmarkIcon(label);
     
     const marker = L.marker(latlng, { icon: divIcon }).addTo(featureLayer);
     const featureData = { id: featureId, category: CATEGORIES.LANDMARK, type: tool, label: label, coordinates: [latlng.lat, latlng.lng] };
@@ -209,15 +213,10 @@ function startLine(latlng) {
 function updateLine(latlng) {
     if (!isDrawingLine || !activePolylineGroup) return;
     
-    if (state.ui.currentTool === TOOLS.LINE_STRAIGHT) {
-        activeCoordinates[1] = latlng; 
-    } else {
-        activeCoordinates.push(latlng); 
-    }
+    if (state.ui.currentTool === TOOLS.LINE_STRAIGHT) activeCoordinates[1] = latlng; 
+    else activeCoordinates.push(latlng); 
     
-    activePolylineGroup.eachLayer(layer => {
-        layer.setLatLngs(activeCoordinates);
-    });
+    activePolylineGroup.eachLayer(layer => layer.setLatLngs(activeCoordinates));
 }
 
 function finishLine() {
@@ -250,18 +249,20 @@ function renderLineGraphics(group, coords, tool) {
     } else if (tool === TOOLS.LINE_METALLED) {
         L.polyline(coords, { color: '#000', weight: 5 }).addTo(group);
         L.polyline(coords, { color: '#fff', weight: 2 }).addTo(group);
+    } else if (tool === TOOLS.LINE_PATHWAY) {
+        // ELITE FIX: True parallel dashed lines for pathways
+        L.polyline(coords, { color: '#000', weight: 6, dashArray: '5, 5' }).addTo(group);
+        L.polyline(coords, { color: '#fff', weight: 4, dashArray: '5, 5' }).addTo(group);
     } else if (tool === TOOLS.LINE_UNMETALLED) {
         L.polyline(coords, { color: '#4b5563', weight: 5 }).addTo(group);
         L.polyline(coords, { color: '#fff', weight: 2, dashArray: '5, 5' }).addTo(group);
-    } else if (tool === TOOLS.LINE_PATHWAY) {
-        L.polyline(coords, { color: '#000', weight: 2, dashArray: '4, 6' }).addTo(group);
     } else if (tool === TOOLS.LINE_BOUNDARY) {
         L.polyline(coords, { color: '#000', weight: 4, dashArray: '15, 10, 5, 10' }).addTo(group);
     } else {
         L.polyline(coords, { color: '#000', weight: 3, smoothFactor: 1.0 }).addTo(group);
     }
 
-    // ELITE FIX: Opacity set to 0.01 so Android touch sensors can 'feel' the Eraser hit-box
+    // ELITE FIX: Opacity 0.01 makes the hit-box detectable by Android touch sensors
     L.polyline(coords, { color: 'transparent', weight: 30, opacity: 0.01 }).addTo(group);
 }
 
@@ -298,8 +299,7 @@ function initInspectorUI() {
             feature.bldgNo = document.getElementById('inspect-ref-no').value;
             feature.houseCount = document.getElementById('inspect-sub-count').value;
             
-            const newIcon = generateBuildingIcon(feature.type, feature.bldgNo, feature.houseCount);
-            activeInspectorMarker.setIcon(newIcon);
+            activeInspectorMarker.setIcon(generateBuildingIcon(feature.type, feature.bldgNo, feature.houseCount));
             scaleDraftSymbols(); 
             saveState();
         }
@@ -323,7 +323,8 @@ function scaleDraftSymbols() {
     const currentZoom = map.getZoom();
     const baseZoom = 18; 
     let scale = Math.pow(1.5, currentZoom - baseZoom);
-    if (scale > 3) scale = 3;
+    // ELITE FIX: Reduced max scale from 3 to 2 so symbols stay reasonably sized
+    if (scale > 2) scale = 2; 
     if (scale < 0.2) scale = 0.2;
     
     document.querySelectorAll('.marker-scaler').forEach(el => {
@@ -347,15 +348,11 @@ export function redrawAllFeatures() {
     state.features.forEach(f => {
         if (f.category === CATEGORIES.BUILDING) {
             if (parseInt(f.bldgNo) > highestBldgNo) highestBldgNo = parseInt(f.bldgNo);
-            const divIcon = generateBuildingIcon(f.type, f.bldgNo, f.houseCount);
-            const marker = L.marker(f.coordinates, { icon: divIcon }).addTo(featureLayer);
+            const marker = L.marker(f.coordinates, { icon: generateBuildingIcon(f.type, f.bldgNo, f.houseCount) }).addTo(featureLayer);
             bindFeatureEvents(marker, f);
 
         } else if (f.category === CATEGORIES.LANDMARK) {
-            const iconHtml = `<div class="font-bold text-sm text-black whitespace-nowrap drop-shadow-md text-shadow-white">${f.label}</div>`;
-            const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
-            const divIcon = L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
-            const marker = L.marker(f.coordinates, { icon: divIcon }).addTo(featureLayer);
+            const marker = L.marker(f.coordinates, { icon: generateLandmarkIcon(f.label) }).addTo(featureLayer);
             bindFeatureEvents(marker, f);
             
         } else if (f.category === CATEGORIES.LINE) {

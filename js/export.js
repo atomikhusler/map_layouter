@@ -1,188 +1,218 @@
 /**
- * MAP LAYOUT DRAFTER - Export Engine
- * Generates downloadable data files (CSV, PDF) directly on the device with zero internet.
+ * MAP LAYOUT DRAFTER - Elite Export Engine (Final Master)
+ * Features: CORS-Bypassing PNG Capture, Offline-Safe Multi-Page PDF, CSV & JSON.
  */
 
 import { state, CATEGORIES } from './config.js';
 
-/**
- * Generates and downloads a CSV file of all mapped features.
- * This is the ultimate "Source of Truth" raw data.
- */
-export function generateCSV() {
-    if (state.features.length === 0) {
-        alert("No data to export! Please draw on the map first.");
-        return;
-    }
-
-    // 1. Create the CSV Header
-    let csvContent = "Feature_ID,Category,Type,Building_No,House_Count,Landmark_Label,Latitude,Longitude\n";
-
-    // 2. Loop through our central state and format the rows
-    state.features.forEach(feature => {
-        const id = feature.id || "Unknown";
-        const category = feature.category || "Unknown";
-        const type = feature.type || "Unknown";
-        const bldgNo = feature.bldgNo || "N/A";
-        const houseCount = feature.houseCount || "N/A";
-        
-        // Sanitize strings to prevent CSV column breaking
-        let label = feature.label || "N/A";
-        label = label.replace(/,/g, " "); // Strip commas
-
-        // Handle Line arrays vs Point coordinates
-        let lat, lng;
-        if (category === CATEGORIES.LINE) {
-            // For lines, we log the starting point in the basic CSV
-            lat = feature.coordinates[0][0].toFixed(6);
-            lng = feature.coordinates[0][1].toFixed(6);
-            label = `[Line Start: ${feature.coordinates.length} nodes]`;
-        } else {
-            lat = feature.coordinates[0].toFixed(6);
-            lng = feature.coordinates[1].toFixed(6);
-        }
-
-        csvContent += `${id},${category},${type},${bldgNo},${houseCount},${label},${lat},${lng}\n`;
+// ==========================================
+// 1. DEPENDENCY AUTO-LOADERS (Offline Safety)
+// ==========================================
+async function ensureHTML2Canvas() {
+    if (window.html2canvas) return true;
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => {
+            alert("Network required for first-time PNG/PDF engine initialization.");
+            resolve(false);
+        };
+        document.head.appendChild(script);
     });
-
-    // 3. Trigger the silent download
-    triggerFileDownload(csvContent, `MapData_${state.user.hlbId}_${Date.now()}.csv`, 'text/csv;charset=utf-8;');
 }
 
-/**
- * Generates a clean PDF Report of the drafted data using jsPDF.
- */
-export function generatePDF() {
+// ==========================================
+// 2. THE ELITE PNG CAPTURE ENGINE
+// ==========================================
+export async function generatePNG() {
     if (state.features.length === 0) {
-        alert("No data to export! Please draw on the map first.");
+        alert("No layout data to capture! Draw your map first.");
+        return null;
+    }
+
+    const isReady = await ensureHTML2Canvas();
+    if (!isReady) return null;
+
+    // ELITE FIX: Eradicate the Tile Pane from the DOM to bypass Google CORS poisoning
+    const tilePane = document.querySelector('.leaflet-tile-pane');
+    const originalDisplay = tilePane ? tilePane.style.display : '';
+    if (tilePane) tilePane.style.display = 'none';
+
+    const mapElement = document.getElementById('map');
+    
+    // Give DOM 200ms to repaint the clean white paper background
+    await new Promise(r => setTimeout(r, 200));
+
+    try {
+        const canvas = await window.html2canvas(mapElement, {
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            scale: 2, // High-Res export
+            logging: false
+        });
+
+        // Restore map tiles instantly
+        if (tilePane) tilePane.style.display = originalDisplay;
+        
+        return canvas.toDataURL('image/png');
+    } catch (err) {
+        console.error("Canvas capture failed:", err);
+        if (tilePane) tilePane.style.display = originalDisplay;
+        alert("Failed to capture map image. Check developer logs.");
+        return null;
+    }
+}
+
+// ==========================================
+// 3. THE MULTI-PAGE PDF ENGINE
+// ==========================================
+export async function generatePDF() {
+    if (state.features.length === 0) {
+        alert("No data to export! Please draft the layout first.");
         return;
     }
 
-    // Initialize jsPDF (Loaded globally via CDN in index.html)
     if (!window.jspdf) {
-        alert("PDF Engine failed to load. Please check your internet connection for the initial load.");
+        alert("PDF Engine failed to load. Check internet connection for initial load.");
+        return;
+    }
+
+    const exportBtn = document.getElementById('export-pdf');
+    let originalText = "PDF Report";
+    if (exportBtn) {
+        originalText = exportBtn.innerText;
+        exportBtn.innerText = "GENERATING...";
+    }
+
+    const mapImageStr = await generatePNG();
+    if (!mapImageStr) {
+        if (exportBtn) exportBtn.innerText = originalText;
         return;
     }
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-    // --- Official Header ---
+    // --- PAGE 1: The Official Drafted Map ---
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    doc.text("MAP LAYOUT DRAFTER", 105, 20, { align: "center" });
+    doc.setFontSize(18);
+    doc.setTextColor(30, 58, 138); 
+    doc.text("OFFICIAL LAYOUT MAP", 105, 20, { align: "center" });
     
     doc.setFontSize(12);
-    doc.text("Area Abstract & Feature Log", 105, 28, { align: "center" });
+    doc.setTextColor(75, 85, 99);
+    doc.text(`Area / Block ID: ${state.user.hlbId || "UNSPECIFIED"}`, 105, 28, { align: "center" });
 
-    // --- Metadata Section ---
-    doc.setFont("helvetica", "normal");
+    // Inject High-Res PNG (A4 width is 210mm. 15mm margins = 180mm width)
+    doc.addImage(mapImageStr, 'PNG', 15, 35, 180, 180);
+
+    // Footer
     doc.setFontSize(10);
-    doc.text(`Enumerator Name: ${state.user.enumeratorName}`, 20, 45);
-    doc.text(`Area / HLB ID: ${state.user.hlbId}`, 20, 52);
-    doc.text(`Total Features Mapped: ${state.features.length}`, 20, 59);
-    doc.text(`Date of Export: ${new Date().toLocaleDateString()}`, 20, 66);
-
-    // --- Data Table Header ---
-    doc.setLineWidth(0.5);
-    doc.line(20, 75, 190, 75); // Top line
-    doc.setFont("helvetica", "bold");
-    doc.text("Category", 25, 82);
-    doc.text("Details (No / Houses / Label)", 65, 82);
-    doc.text("GPS Coordinates", 140, 82);
-    doc.line(20, 85, 190, 85); // Bottom line
-
-    // --- Data Table Rows ---
     doc.setFont("helvetica", "normal");
-    let yPos = 92;
+    doc.text(`Drafter: ${state.user.enumeratorName || "Unknown"}`, 15, 230);
+    doc.text(`Date Drafted: ${new Date().toLocaleDateString()}`, 15, 236);
+    doc.text(`Total Elements: ${state.features.length}`, 15, 242);
 
-    state.features.forEach((feature) => {
-        // If we run out of space on the A4 page, add a new page
+    // --- PAGE 2+: The Feature Data Registry ---
+    doc.addPage();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("LAYOUT FEATURE REGISTRY", 105, 20, { align: "center" });
+
+    // Table Headers
+    doc.setLineWidth(0.5);
+    doc.line(15, 30, 195, 30);
+    doc.setFontSize(10);
+    doc.text("Sl. No.", 15, 36);
+    doc.text("Category", 35, 36);
+    doc.text("Details (Name / Houses)", 75, 36);
+    doc.text("GPS Coordinates", 140, 36);
+    doc.line(15, 40, 195, 40);
+
+    doc.setFont("helvetica", "normal");
+    let yPos = 48;
+
+    state.features.forEach((f, index) => {
         if (yPos > 270) {
             doc.addPage();
-            yPos = 20; // Reset Y position
+            yPos = 20; 
         }
 
-        let detailStr = "-";
-        let latLngStr = "-";
+        let cleanName = f.label ? f.label.replace(/\[|\]/g, '') : "-";
+        let coords = "";
+        let details = "";
 
-        if (feature.category === CATEGORIES.BUILDING) {
-            detailStr = `Bldg: ${feature.bldgNo} | Houses: ${feature.houseCount}`;
-            latLngStr = `${feature.coordinates[0].toFixed(4)}, ${feature.coordinates[1].toFixed(4)}`;
-        } else if (feature.category === CATEGORIES.LANDMARK) {
-            detailStr = feature.label;
-            latLngStr = `${feature.coordinates[0].toFixed(4)}, ${feature.coordinates[1].toFixed(4)}`;
-        } else if (feature.category === CATEGORIES.LINE) {
-            detailStr = `Line (${feature.type.replace('line_', '')})`;
-            latLngStr = `[Path: ${feature.coordinates.length} nodes]`;
+        if (f.category === CATEGORIES.BUILDING) {
+            details = `Bldg ${f.bldgNo} | Houses: ${f.houseCount}`;
+            coords = `${f.coordinates[0].toFixed(5)}, ${f.coordinates[1].toFixed(5)}`;
+        } else if (f.category === CATEGORIES.LINE) {
+            details = `Road/Line (${f.type.replace('line_', '')})`;
+            coords = `[Path: ${f.coordinates.length} Nodes]`;
+        } else {
+            details = cleanName;
+            coords = `${f.coordinates[0].toFixed(5)}, ${f.coordinates[1].toFixed(5)}`;
         }
 
-        doc.text(feature.category, 25, yPos);
-        doc.text(detailStr, 65, yPos);
-        doc.text(latLngStr, 140, yPos);
+        doc.text((index + 1).toString(), 15, yPos);
+        doc.text(f.category.toUpperCase(), 35, yPos);
+        doc.text(details.substring(0, 30), 75, yPos); 
+        doc.text(coords, 140, yPos);
 
-        yPos += 8; // Move down for the next row
+        yPos += 8;
     });
 
-    // --- Silent Download ---
-    doc.save(`Area_${state.user.hlbId}_Report.pdf`);
-    console.log("[Export Engine] PDF successfully generated and downloaded.");
+    doc.save(`Layout_Map_${state.user.hlbId || "Draft"}.pdf`);
+    if (exportBtn) exportBtn.innerText = originalText;
 }
 
-/**
- * Utility function to force a file download in the browser
- */
-function triggerFileDownload(content, fileName, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", fileName);
-    document.body.appendChild(link);
-    link.click();
-    
-    // Clean up
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
 // ==========================================
-// SPRINT 5 FIX: MISSING PNG & JSON GENERATORS
+// 4. DATA EXPORT (CSV & JSON)
 // ==========================================
-export async function generatePNG() {
-    if (state.features.length === 0) return alert("No layout data to capture!");
-    
-    // Auto-load html2canvas for offline-safe PNG rendering
-    if (!window.html2canvas) {
-        await new Promise((resolve) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-            script.onload = resolve;
-            document.head.appendChild(script);
-        });
-    }
+export function generateCSV() {
+    if (state.features.length === 0) return alert("No data to export!");
 
-    const tilePane = document.querySelector('.leaflet-tile-pane');
-    const originalOpacity = tilePane ? tilePane.style.opacity : '1';
-    if (tilePane) tilePane.style.opacity = '0'; // Force white background
-    
-    await new Promise(r => setTimeout(r, 100)); // wait for DOM repaint
-    
-    try {
-        const canvas = await window.html2canvas(document.getElementById('map'), {
-            useCORS: true, backgroundColor: '#ffffff', scale: 2
-        });
-        if (tilePane) tilePane.style.opacity = originalOpacity;
-        return canvas.toDataURL('image/png');
-    } catch (err) {
-        if (tilePane) tilePane.style.opacity = originalOpacity;
-        console.error("Canvas capture failed:", err);
-        return null;
-    }
+    let csvContent = "Sl_No,Feature_ID,Category,Type,Building_No,House_Count,Feature_Name,Latitude,Longitude\n";
+
+    state.features.forEach((f, index) => {
+        const id = f.id || "Unknown";
+        const cat = f.category || "Unknown";
+        const type = f.type || "Unknown";
+        const bNo = f.bldgNo || "N/A";
+        const hC = f.houseCount || "N/A";
+        let label = (f.label || "N/A").replace(/,/g, " "); 
+
+        let lat, lng;
+        if (cat === CATEGORIES.LINE) {
+            lat = f.coordinates[0][0].toFixed(6);
+            lng = f.coordinates[0][1].toFixed(6);
+            label = `[Path Start] ${label}`;
+        } else {
+            lat = f.coordinates[0].toFixed(6);
+            lng = f.coordinates[1].toFixed(6);
+        }
+
+        csvContent += `${index + 1},${id},${cat},${type},${bNo},${hC},${label},${lat},${lng}\n`;
+    });
+
+    triggerFileDownload(csvContent, `DataLog_${state.user.hlbId || "Draft"}.csv`, 'text/csv;charset=utf-8;');
 }
 
 export function generateJSON() {
     if (state.features.length === 0) return alert("No data to export!");
     const jsonStr = JSON.stringify(state, null, 2);
     triggerFileDownload(jsonStr, `GIS_Twin_${state.user.hlbId || "Draft"}.json`, 'application/json');
+}
+
+function triggerFileDownload(content, fileName, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }

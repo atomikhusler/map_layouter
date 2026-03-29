@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Geographic Engine (Sprint 2 Master)
- * Handles Leaflet setup, Multi-Layer Tiles, Optional GPS, and Area Locking.
+ * MAP LAYOUT DRAFTER - Geographic Engine (Sprint 5 Master)
+ * Features: Auto-Panning GPS, Multi-Layer Tiles, and Area Locking.
  */
 
 import { state } from './config.js';
@@ -17,29 +17,26 @@ export let isGPSActive = false;
 let watchId = null;
 
 /**
- * Initializes the Leaflet Map with Passive/Manual Positioning
+ * Initializes the Leaflet Map
  */
 export function initMap() {
-    console.log("[Map Engine] Initializing V2...");
+    console.log("[Map Engine] Initializing V5...");
 
-    // Create the Map (Zoom controls disabled for tablet UI)
     map = L.map('map', {
         zoomControl: false,
         attributionControl: false,
         zoomAnimation: true,
         fadeAnimation: true
-    }).setView([20.296, 85.824], 14); // Default fallback: Bhubaneswar (Zoomed out for easier panning)
+    }).setView([20.296, 85.824], 14); 
 
     // Pre-load all professional Tile Layers
     satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 22, detectRetina: true });
     terrainLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', { maxZoom: 22, detectRetina: true });
     darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 22, subdomains: 'abcd' });
 
-    // Set default
     currentBaseLayer = satelliteLayer.addTo(map);
     
-    // GPS is no longer forced on boot. It waits for the user.
-    updateGPSIndicator('gray', 'GPS Off');
+    updateGPSIndicator('gray', 'Off');
 }
 
 /**
@@ -62,7 +59,7 @@ export function lockArea() {
 }
 
 /**
- * Swaps the base tile layer (Triggered from Settings or Day/Night Mode)
+ * Swaps the base tile layer
  */
 export function toggleBaseMap(type) {
     if (currentBaseLayer) map.removeLayer(currentBaseLayer);
@@ -84,10 +81,12 @@ export function toggleGPS() {
         userLocationMarker = null;
         accuracyCircle = null;
         isGPSActive = false;
-        updateGPSIndicator('gray', 'GPS Off');
+        state.ui.hasPannedToGPS = false; // Reset the pan lock
+        updateGPSIndicator('gray', 'Off');
     } else {
         // Turn On
         isGPSActive = true;
+        state.ui.hasPannedToGPS = false; // Prepare to pan
         updateGPSIndicator('yellow', 'Locating...');
         startGPS();
     }
@@ -109,6 +108,12 @@ function startGPS() {
             state.gps.lat = lat;
             state.gps.lng = lng;
             state.gps.accuracy = accuracy;
+
+            // ELITE FIX: Auto-Pan to location on first successful lock
+            if (!state.ui.hasPannedToGPS && accuracy <= 100) {
+                map.flyTo([lat, lng], 18, { duration: 1.5 });
+                state.ui.hasPannedToGPS = true; // Prevents the map from trapping the user
+            }
 
             updateLocationMarker(lat, lng, accuracy);
 
@@ -140,22 +145,20 @@ function updateGPSIndicator(colorClass, text) {
     const textLabel = document.getElementById('gps-accuracy-text');
     if (!indicator || !textLabel) return;
 
-    // Reset base styles
     indicator.className = 'w-3 h-3 rounded-full transition-colors'; 
-    textLabel.className = 'text-[10px] font-mono font-bold ml-1';
+    textLabel.className = 'text-[10px] font-mono font-bold text-gray-600 dark:text-gray-400';
 
     if (colorClass === 'red') {
         indicator.classList.add('bg-red-500', 'shadow-[0_0_5px_rgba(239,68,68,0.8)]');
-        textLabel.classList.add('text-red-400');
+        textLabel.classList.add('!text-red-500');
     } else if (colorClass === 'yellow') {
         indicator.classList.add('bg-yellow-400', 'shadow-[0_0_5px_rgba(250,204,21,0.8)]');
-        textLabel.classList.add('text-yellow-400');
+        textLabel.classList.add('!text-yellow-500');
     } else if (colorClass === 'green') {
         indicator.classList.add('bg-green-500', 'shadow-[0_0_5px_rgba(34,197,94,0.8)]');
-        textLabel.classList.add('text-green-400');
+        textLabel.classList.add('!text-green-500');
     } else if (colorClass === 'gray') {
         indicator.classList.add('bg-gray-400');
-        textLabel.classList.add('text-gray-400');
     }
     
     textLabel.innerText = text;

@@ -1,12 +1,16 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 5 Master - Linter Proof)
- * Features: 0-Error Touch Fix, Undo/Redo Memory, Dark Mode, Multi-Format Export.
+ * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Final Master)
+ * Features: 0-Error Event Bubbling, Bounded FAB Dragging, Module Crash Prevention.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
 import { initMap, lockArea, map, toggleBaseMap, toggleGPS } from './map.js';
 import { initSymbols, redrawAllFeatures } from './symbol.js'; 
-import { generatePDF, generatePNG, generateCSV, generateJSON } from './export.js'; 
+
+// ELITE FIX: Wildcard Import prevents the app from fatally crashing 
+// because your current export.js file is missing the PNG and JSON functions.
+import * as Exporter from './export.js'; 
+
 import { loadDraftLocally, clearDraft, saveDraftLocally } from './storage.js';
 
 window.appLogs = [];
@@ -23,7 +27,14 @@ console.error = function(...args) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    // ELITE FIX: Added 'e.scale &&' to prevent Android devices from freezing
+    // Prevent Android hardware back button from closing/resetting the app
+    window.history.pushState(null, null, window.location.href);
+    window.onpopstate = function () {
+        window.history.pushState(null, null, window.location.href);
+        alert("Please use the on-screen menus to navigate. Back button disabled to prevent data loss.");
+    };
+
+    // Added 'e.scale &&' to prevent Android devices from freezing
     document.addEventListener('touchmove', (e) => {
         if (e.scale && e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { 
             e.preventDefault(); 
@@ -123,10 +134,18 @@ function initPhase1Setup() {
             }
         });
 
-        // ELITE FIX: Bulletproof click-away listener using composedPath() to satisfy strict Acode Linter
-        document.addEventListener('click', (e) => {
-            const path = e.composedPath();
-            if (!path.includes(searchInput) && !path.includes(suggestionsBox) && !path.includes(btnSearch)) {
+        // ELITE FIX: 100% Linter-Proof Click-Away Logic. 
+        // Using Event Bubbling entirely eliminates the need for 'e.target' and 'instanceof Node'.
+        const searchContainer = searchInput.parentElement.parentElement;
+        if (searchContainer) {
+            searchContainer.addEventListener('click', (e) => {
+                e.stopPropagation(); // Stops clicks inside the search UI from reaching the document
+            });
+        }
+        
+        document.addEventListener('click', () => {
+            // If a click reaches the document, it MUST be outside the search container
+            if (!suggestionsBox.classList.contains('hidden')) {
                 suggestionsBox.classList.add('hidden');
             }
         });
@@ -151,7 +170,7 @@ function initPhase1Setup() {
 }
 
 // ==========================================
-// 4. ELITE DRAGGABLE FAB ENGINE
+// 4. ELITE BOUNDED DRAGGABLE FAB ENGINE
 // ==========================================
 function makeDraggable(container) {
     if (!container) return;
@@ -165,7 +184,6 @@ function makeDraggable(container) {
 
     function dragStart(e) {
         e = e || window.event;
-        // ELITE FIX: Removed e.preventDefault() entirely so button clicks are never swallowed
         if(e.type === 'touchstart') {
             pos3 = e.touches[0].clientX;
             pos4 = e.touches[0].clientY;
@@ -196,8 +214,19 @@ function makeDraggable(container) {
         pos3 = clientX;
         pos4 = clientY;
 
-        container.style.top = (container.offsetTop - pos2) + "px";
-        container.style.left = (container.offsetLeft - pos1) + "px";
+        let newTop = container.offsetTop - pos2;
+        let newLeft = container.offsetLeft - pos1;
+
+        const maxTop = window.innerHeight - container.offsetHeight - 10;
+        const maxLeft = window.innerWidth - container.offsetWidth - 10;
+        
+        if (newTop < 10) newTop = 10;
+        if (newTop > maxTop) newTop = maxTop;
+        if (newLeft < 10) newLeft = 10;
+        if (newLeft > maxLeft) newLeft = maxLeft;
+
+        container.style.top = newTop + "px";
+        container.style.left = newLeft + "px";
         container.style.bottom = "auto";
         container.style.right = "auto";
     }
@@ -295,7 +324,28 @@ function setActiveTool(toolId) {
 // ==========================================
 function initUIControls() {
     
-    // --- Dark Mode Toggle ---
+    const brandingPill = document.getElementById('branding-pill');
+    let tapCount = 0;
+    let tapTimer;
+    if (brandingPill) {
+        brandingPill.addEventListener('click', () => {
+            tapCount++;
+            clearTimeout(tapTimer);
+            if (tapCount >= 5) {
+                tapCount = 0;
+                if(confirm("DEVELOPER MODE: Download internal error logs?")) {
+                    const logContent = window.appLogs.join('\n');
+                    const blob = new Blob([logContent || "No errors logged."], { type: 'text/plain' });
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `LMD_Logs_${Date.now()}.txt`;
+                    link.click();
+                }
+            }
+            tapTimer = setTimeout(() => tapCount = 0, 1500);
+        });
+    }
+
     const darkToggle = document.getElementById('toggle-dark-mode');
     if (darkToggle) {
         darkToggle.addEventListener('change', (e) => {
@@ -304,7 +354,6 @@ function initUIControls() {
         });
     }
 
-    // --- Undo & Redo Engine ---
     const btnUndo = document.getElementById('btn-undo');
     const btnRedo = document.getElementById('btn-redo');
 
@@ -313,7 +362,6 @@ function initUIControls() {
             if (state.undoStack.length > 0) {
                 const currentState = state.undoStack.pop();
                 state.redoStack.push(currentState);
-                
                 state.features = state.undoStack.length > 0 ? JSON.parse(JSON.stringify(state.undoStack[state.undoStack.length - 1])) : [];
                 redrawAllFeatures();
                 saveDraftLocally();
@@ -326,7 +374,6 @@ function initUIControls() {
             if (state.redoStack.length > 0) {
                 const nextState = state.redoStack.pop();
                 state.undoStack.push(nextState);
-                
                 state.features = JSON.parse(JSON.stringify(nextState));
                 redrawAllFeatures();
                 saveDraftLocally();
@@ -334,7 +381,6 @@ function initUIControls() {
         });
     }
 
-    // --- Transparency Slider ---
     const slider = document.getElementById('smokiness-slider');
     if (slider) {
         slider.addEventListener('input', (e) => {
@@ -346,29 +392,48 @@ function initUIControls() {
     }
 
     const btnRefresh = document.getElementById('btn-refresh');
-    if (btnRefresh) {
-        btnRefresh.addEventListener('click', () => redrawAllFeatures());
-    }
+    if (btnRefresh) btnRefresh.addEventListener('click', () => redrawAllFeatures());
 
     const btnToggleGps = document.getElementById('btn-toggle-gps');
     if (btnToggleGps) btnToggleGps.addEventListener('click', toggleGPS);
 
-    // --- Export Menu Connections ---
-    if (document.getElementById('btn-export')) document.getElementById('btn-export').addEventListener('click', generatePDF);
-    if (document.getElementById('export-pdf')) document.getElementById('export-pdf').addEventListener('click', generatePDF);
-    if (document.getElementById('export-png')) document.getElementById('export-png').addEventListener('click', async () => {
-        const imgData = await generatePNG();
-        if (imgData) {
-            const link = document.createElement("a");
-            link.href = imgData;
-            link.download = `Map_Layout_${state.user.hlbId || "Draft"}.png`;
-            link.click();
-        }
-    });
-    if (document.getElementById('export-csv')) document.getElementById('export-csv').addEventListener('click', generateCSV);
-    if (document.getElementById('export-json')) document.getElementById('export-json').addEventListener('click', generateJSON);
+    // --- Safe Export Menu Connections ---
+    if (document.getElementById('export-pdf')) {
+        document.getElementById('export-pdf').addEventListener('click', () => {
+            if (Exporter.generatePDF) Exporter.generatePDF();
+            else alert("Update your export.js file to enable PDF generation.");
+        });
+    }
 
-    // --- Base Map Layer Switcher ---
+    if (document.getElementById('export-png')) {
+        document.getElementById('export-png').addEventListener('click', async () => {
+            if (Exporter.generatePNG) {
+                const imgData = await Exporter.generatePNG();
+                if (imgData) {
+                    const link = document.createElement("a");
+                    link.href = imgData;
+                    link.download = `Map_Layout_${state.user.hlbId || "Draft"}.png`;
+                    link.click();
+                }
+            } else {
+                alert("Update your export.js file to enable PNG generation.");
+            }
+        });
+    }
+
+    if (document.getElementById('export-csv')) {
+        document.getElementById('export-csv').addEventListener('click', () => {
+            if (Exporter.generateCSV) Exporter.generateCSV();
+        });
+    }
+
+    if (document.getElementById('export-json')) {
+        document.getElementById('export-json').addEventListener('click', () => {
+            if (Exporter.generateJSON) Exporter.generateJSON();
+            else alert("Update your export.js file to enable JSON generation.");
+        });
+    }
+
     document.querySelectorAll('.map-layer-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.map-layer-btn').forEach(b => {
@@ -394,8 +459,6 @@ function initUIControls() {
             if(confirm("CRITICAL WARNING: This will permanently delete your drafted layout. Proceed?")) clearDraft();
         });
     }
-
-    // --- Slide-out Menu Wiring ---
     const btnMenu = document.getElementById('btn-menu');
     const btnCloseMenu = document.getElementById('btn-close-menu');
     const settingsMenu = document.getElementById('settings-menu');
