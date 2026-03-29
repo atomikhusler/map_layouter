@@ -1,13 +1,11 @@
 /* ==========================================================================
-   MAP LAYOUT DRAFTER: FIELD-HARDENED STYLES (Sprint 1 Master)
+   MAP LAYOUT DRAFTER: FIELD-HARDENED STYLES (Sprint 3 Master)
    ========================================================================== */
 
-/* 1. Global Reset & Touch Constraints */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    /* Prevent Android tap highlight boxes */
     -webkit-tap-highlight-color: transparent; 
 }
 
@@ -16,31 +14,24 @@ html, body {
     height: 100%;
     overflow: hidden;
     background-color: #f3f4f6;
-    /* Prevent accidental text selection while drafting */
     user-select: none;
     -webkit-user-select: none;
-    /* Smooth transition for Day/Night mode */
-    transition: background-color 0.3s ease;
 }
 
-/* 2. THE Z-INDEX INVERSION FIX (Layer Visibility Bug Resolved) */
+/* * THE ELITE "PAPER" FIX 
+ * Instead of covering the map, we make the map background white, 
+ * and we will fade the Leaflet Tile Pane (Satellite) via JS.
+ * Drawings exist in marker/overlay panes, so they stay 100% visible!
+ */
 #map {
-    /* Base map is white so when satellite fades, it becomes paper */
     background-color: #ffffff !important; 
 }
 
-/* Force the Drawing Layers to pierce through the UI/Tracing layer */
-.leaflet-overlay-pane {
-    z-index: 600 !important; /* Lines/Roads */
-}
-.leaflet-marker-pane {
-    z-index: 610 !important; /* Buildings/Landmarks */
-}
-.leaflet-tooltip-pane {
-    z-index: 620 !important;
+.leaflet-tile-pane {
+    transition: opacity 0.1s ease-out; /* Smooth transition for slider */
 }
 
-/* 3. Premium Horizontal Slider (Replaces Vertical) */
+/* Premium Horizontal Slider */
 .horizontal-slider {
     appearance: none;
     -webkit-appearance: none;
@@ -70,23 +61,15 @@ html, body {
     background: #1d4ed8;
 }
 
-/* 4. Glassmorphism & Premium UI Utilities */
+/* Glassmorphism Utilities */
 .glass-panel {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
-.hide-scrollbar {
-    scrollbar-width: none; 
-    -ms-overflow-style: none; 
-}
-.hide-scrollbar::-webkit-scrollbar {
-    display: none; 
-}
-
-/* 5. Custom FAB Tool Button States */
+/* Custom FAB States */
 .tool-btn {
     transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -98,18 +81,16 @@ html, body {
     box-shadow: 0 6px 12px -2px rgba(59, 130, 246, 0.3);
 }
 
-/* 6. Dynamic Scaling Classes & Icon Typography */
+/* Dynamic Scaling & Typography */
 .draft-symbol {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    /* Ensure icons don't block clicks to things directly underneath them if empty */
     pointer-events: auto;
-    transition: transform 0.1s ease-out; /* Smooth scaling */
+    transition: transform 0.1s ease-out;
 }
 
-/* Critical utility for symbol.js text rendering */
 .text-shadow-white {
     text-shadow: 
         1.5px 1.5px 0 #fff, 
@@ -122,31 +103,12 @@ html, body {
         -1.5px 0px 0 #fff;
 }
 
-/* 7. Map Overrides (Zero Clutter Policy) */
-.leaflet-control-zoom {
-    display: none !important; 
-}
-
+/* Map Overrides */
+.leaflet-control-zoom { display: none !important; }
 .leaflet-control-attribution {
     font-size: 8px !important;
     background: rgba(255, 255, 255, 0.5) !important;
     padding: 2px 5px !important;
     border-radius: 4px 0 0 0;
     color: #4b5563 !important;
-}
-
-/* 8. Dark Mode Overrides */
-body.dark-mode .glass-panel {
-    background: rgba(17, 24, 39, 0.8);
-    border-color: rgba(255, 255, 255, 0.1);
-    color: #f3f4f6;
-}
-
-body.dark-mode .text-shadow-white {
-    text-shadow: 
-        1px 1px 0 #111827, 
-        -1px -1px 0 #111827, 
-        1px -1px 0 #111827, 
-        -1px 1px 0 #111827;
-    color: #f3f4f6 !important;
 }
