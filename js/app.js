@@ -1,17 +1,14 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller
- * Handles Phase transitions, FAB Menu logic, and the Black Box Logger.
+ * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 2 Master)
+ * Handles Phase splits, Nominatim Search, Draggable Menus, and Core bindings.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
-import { initMap, lockArea } from './map.js';
+import { initMap, lockArea, map, toggleBaseMap, toggleGPS } from './map.js';
 import { initSymbols, redrawAllFeatures } from './symbol.js'; 
 import { generatePDF } from './export.js'; 
 import { loadDraftLocally, clearDraft } from './storage.js';
 
-// ==========================================
-// 1. ELITE BLACK BOX LOGGER (Field Diagnostics)
-// ==========================================
 window.appLogs = [];
 const originalLog = console.log;
 const originalError = console.error;
@@ -25,118 +22,181 @@ console.error = function(...args) {
     originalError.apply(console, args);
 };
 
-function downloadCrashLog() {
-    const blob = new Blob([window.appLogs.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `MapDrafter_Diagnostic_${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    alert("Diagnostic Log Downloaded.");
-}
-
-// ==========================================
-// 2. APP INITIALIZATION
-// ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("Map Layout Drafter: Boot Sequence Initiated.");
-
-    // Prevent default browser zooming/scrolling
     document.addEventListener('touchmove', (e) => {
-        if (e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { 
-            e.preventDefault(); 
-        } 
+        if (e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { e.preventDefault(); } 
     }, { passive: false });
 
     initMap();
     initSymbols();
     
-    // THE AMNESIA FIX: Try to load saved data first
     const hasSavedData = loadDraftLocally();
     if (hasSavedData && state.features.length > 0) {
-        console.log("Found existing draft. Bypassing Phase 1.");
-        document.getElementById('setup-layer').classList.add('hidden');
-        document.getElementById('ui-layer').classList.remove('hidden');
-        document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
+        if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
+        if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
+        if(document.getElementById('display-area-id')) document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
         lockArea();
-        redrawAllFeatures(); // Repaint the map
+        redrawAllFeatures(); 
     } else {
-        initPhase1Setup(); // Normal start
+        initPhase1Setup(); 
     }
 
     initFABLogic();
     initUIControls();
+    
+    // Sprint 2 Fix: Make Tool Hub Draggable
+    makeDraggable(document.getElementById('fab-container'));
 });
 
 // ==========================================
-// 3. PHASE 1: AREA SETUP LOGIC
+// 3. PHASE 1: SPLIT SETUP & SEARCH ENGINE
 // ==========================================
 function initPhase1Setup() {
-    const btnLock = document.getElementById('btn-lock-area');
+    const btnToStepB = document.getElementById('btn-to-step-b');
+    const btnLock = document.getElementById('btn-lock-area'); // The final confirm button
     const inputName = document.getElementById('setup-name');
     const inputArea = document.getElementById('setup-area');
+    const btnSearch = document.getElementById('btn-search');
+    
+    // Fallback if using old HTML (Backward compatibility)
+    const oldLock = document.getElementById('btn-lock-area-old'); 
 
-    // Enable button only if both fields have text
     const checkInputs = () => {
-        if (inputName.value.trim() !== "" && inputArea.value.trim() !== "") {
-            btnLock.removeAttribute('disabled');
+        const btn = btnToStepB || oldLock || btnLock; 
+        if (!btn) return;
+        if (inputName && inputName.value.trim() !== "" && inputArea && inputArea.value.trim() !== "") {
+            btn.removeAttribute('disabled');
         } else {
-            btnLock.setAttribute('disabled', 'true');
+            btn.setAttribute('disabled', 'true');
         }
     };
 
-    inputName.addEventListener('input', checkInputs);
-    inputArea.addEventListener('input', checkInputs);
+    if(inputName) inputName.addEventListener('input', checkInputs);
+    if(inputArea) inputArea.addEventListener('input', checkInputs);
 
-    btnLock.addEventListener('click', () => {
-        // Save metadata to central state
-        state.user.enumeratorName = inputName.value.trim();
-        state.user.hlbId = inputArea.value.trim();
-        state.ui.phase = 2;
+    // Step A to Step B Transition
+    if (btnToStepB) {
+        btnToStepB.addEventListener('click', () => {
+            document.getElementById('setup-step-a').classList.add('hidden');
+            document.getElementById('setup-step-b').classList.remove('hidden');
+        });
+    }
 
-        console.log(`Phase 1 Complete. Area Locked for: ${state.user.hlbId}`);
+    // Nominatim OpenStreetMap Search
+    if (btnSearch) {
+        btnSearch.addEventListener('click', async () => {
+            const query = document.getElementById('map-search').value;
+            if (!query) return;
+            try {
+                btnSearch.innerText = "...";
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                if (data.length > 0) {
+                    // Zoom smoothly to the location
+                    map.flyTo([data[0].lat, data[0].lon], 17, { duration: 1.5 });
+                } else {
+                    alert("Location not found. Try a broader search.");
+                }
+            } catch (err) {
+                console.error("Search failed", err);
+                alert("Search Error. Check internet connection.");
+            } finally {
+                btnSearch.innerText = "Find";
+            }
+        });
+    }
 
-        // Update UI Text
-        document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
+    // Final Geographic Lock
+    if (btnLock || oldLock) {
+        (btnLock || oldLock).addEventListener('click', () => {
+            state.user.enumeratorName = inputName ? inputName.value.trim() : "Unknown";
+            state.user.hlbId = inputArea ? inputArea.value.trim() : "Unknown";
+            state.ui.phase = 2;
 
-        // Lock the Map Boundaries
-        lockArea();
+            if(document.getElementById('display-area-id')) {
+                document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
+            }
 
-        // Transition UI
-        document.getElementById('setup-layer').classList.add('hidden');
-        document.getElementById('ui-layer').classList.remove('hidden');
-    });
+            lockArea();
+
+            if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
+            if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
+        });
+    }
 }
 
 // ==========================================
-// 4. THE FAB MENU ENGINE (Phase 2)
+// 4. DRAGGABLE FAB ENGINE
+// ==========================================
+function makeDraggable(element) {
+    if (!element) return;
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    
+    // Only drag via the Main Button so sub-menus don't accidentally drag
+    const dragHandle = document.getElementById('fab-main');
+    if (dragHandle) {
+        dragHandle.onmousedown = dragMouseDown;
+        dragHandle.ontouchstart = dragMouseDown;
+    } else {
+        element.onmousedown = dragMouseDown;
+        element.ontouchstart = dragMouseDown;
+    }
+
+    function dragMouseDown(e) {
+        e = e || window.event;
+        // Don't prevent default on touchstart or it breaks click events
+        pos3 = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        pos4 = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        document.onmouseup = closeDragElement;
+        document.ontouchend = closeDragElement;
+        document.onmousemove = elementDrag;
+        document.ontouchmove = elementDrag;
+    }
+
+    function elementDrag(e) {
+        e = e || window.event;
+        let clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+        let clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        pos1 = pos3 - clientX;
+        pos2 = pos4 - clientY;
+        pos3 = clientX;
+        pos4 = clientY;
+        
+        element.style.top = (element.offsetTop - pos2) + "px";
+        element.style.left = (element.offsetLeft - pos1) + "px";
+        element.style.bottom = "auto";
+        element.style.right = "auto";
+    }
+
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+        document.ontouchend = null;
+        document.ontouchmove = null;
+    }
+}
+
+// ==========================================
+// 5. THE FAB MENU ENGINE
 // ==========================================
 function initFABLogic() {
     const fabMain = document.getElementById('fab-main');
     const fabCategories = document.getElementById('fab-categories');
     const fabSubmenu = document.getElementById('fab-submenu');
-    
-    // Toggle Level 1 Categories
+    if(!fabMain || !fabCategories) return;
+
     fabMain.addEventListener('click', () => {
         fabCategories.classList.toggle('hidden');
         fabCategories.classList.toggle('flex');
-        fabSubmenu.classList.add('hidden'); // Always hide submenu when toggling main
+        if(fabSubmenu) fabSubmenu.classList.add('hidden');
     });
 
-    // Handle Level 1 Category Clicks
     document.querySelectorAll('.fab-cat-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const category = e.currentTarget.getAttribute('data-cat');
             state.ui.currentCategory = category;
-            
-            // Update Main FAB Icon to reflect chosen category
             fabMain.innerHTML = e.currentTarget.innerHTML;
-            
-            // Open Level 2 Submenu
             populateSubMenu(category);
-            
-            // Hide the vertical fan
             fabCategories.classList.add('hidden');
             fabCategories.classList.remove('flex');
         });
@@ -145,18 +205,18 @@ function initFABLogic() {
 
 function populateSubMenu(category) {
     const submenu = document.getElementById('fab-submenu');
-    submenu.innerHTML = ''; // Clear previous tools
-    
+    if(!submenu) return;
+    submenu.innerHTML = ''; 
     let toolsHTML = '';
 
     if (category === CATEGORIES.HAND) {
         submenu.classList.add('hidden');
         setActiveTool(TOOLS.PAN);
-        return; // Hand has no sub-menu
+        return; 
     } else if (category === CATEGORIES.ERASER) {
         submenu.classList.add('hidden');
         setActiveTool(TOOLS.ERASER);
-        return; // Eraser has no sub-menu
+        return; 
     } else if (category === CATEGORIES.BUILDING) {
         toolsHTML = `
             <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_RES}"><div class="w-6 h-6 border-2 border-black bg-white"></div></button>
@@ -182,12 +242,9 @@ function populateSubMenu(category) {
     submenu.classList.remove('hidden');
     submenu.classList.add('flex');
 
-    // Attach listeners to new tool buttons
     submenu.querySelectorAll('.tool-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             setActiveTool(e.currentTarget.getAttribute('data-tool'));
-            
-            // Highlight active tool visually
             submenu.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
             e.currentTarget.classList.add('active');
         });
@@ -196,40 +253,43 @@ function populateSubMenu(category) {
 
 function setActiveTool(toolId) {
     state.ui.currentTool = toolId;
-    console.log(`Tool Switched to: ${toolId}`);
 }
 
 // ==========================================
-// 5. GENERIC UI CONTROLS
+// 6. GENERIC UI CONTROLS & BINDINGS
 // ==========================================
 function initUIControls() {
-    // Transparency Slider
+    // Horizontal Transparency Slider
     const slider = document.getElementById('smokiness-slider');
     const tracingLayer = document.getElementById('tracing-layer');
+    if (slider && tracingLayer) {
+        slider.addEventListener('input', (e) => {
+            state.ui.smokiness = e.target.value;
+            const opacity = e.target.value / 100;
+            tracingLayer.style.backgroundColor = `rgba(255, 255, 255, ${opacity})`;
+        });
+    }
 
-    slider.addEventListener('input', (e) => {
-        state.ui.smokiness = e.target.value;
-        const opacity = e.target.value / 100;
-        tracingLayer.style.backgroundColor = `rgba(255, 255, 255, ${opacity})`;
-    });
+    // Manual Refresh Sync Button
+    const btnRefresh = document.getElementById('btn-refresh');
+    if (btnRefresh) {
+        btnRefresh.addEventListener('click', () => {
+            redrawAllFeatures();
+            console.log("Forced UI Refresh Triggered.");
+        });
+    }
+
+    // GPS Toggle Binding (Clicking the GPS pill turns it on/off)
+    const gpsContainer = document.getElementById('gps-status')?.parentElement;
+    if (gpsContainer) {
+        gpsContainer.style.cursor = 'pointer';
+        gpsContainer.addEventListener('click', toggleGPS);
+    }
 
     // Export PDF
-    document.getElementById('btn-export').addEventListener('click', () => {
-        generatePDF();
-    });
-
-    // Hidden Black Box Trigger (Tap Area ID 5 times)
-    let tapCount = 0;
-    let tapTimer;
-    document.getElementById('display-area-id').addEventListener('click', () => {
-        tapCount++;
-        clearTimeout(tapTimer);
-        if (tapCount >= 5) {
-            downloadCrashLog();
-            tapCount = 0;
-        }
-        tapTimer = setTimeout(() => { tapCount = 0; }, 2000);
-    });
+    if(document.getElementById('btn-export')) {
+        document.getElementById('btn-export').addEventListener('click', () => generatePDF());
+    }
 
     // Slide-out Menu Wiring
     const btnMenu = document.getElementById('btn-menu');
@@ -238,27 +298,25 @@ function initUIControls() {
     const menuOverlay = document.getElementById('menu-overlay');
 
     const toggleMenu = () => {
+        if(!settingsMenu) return;
         const isClosed = settingsMenu.classList.contains('-translate-x-full');
         if (isClosed) {
             settingsMenu.classList.remove('-translate-x-full');
-            menuOverlay.classList.remove('hidden');
-            
-            // Update Live Stats when opening
-            document.getElementById('stat-bldg').innerText = state.features.filter(f => f.category === CATEGORIES.BUILDING).length;
-            document.getElementById('stat-lm').innerText = state.features.filter(f => f.category === CATEGORIES.LANDMARK).length;
-            document.getElementById('stat-lines').innerText = state.features.filter(f => f.category === CATEGORIES.LINE).length;
+            if(menuOverlay) menuOverlay.classList.remove('hidden');
+            if(document.getElementById('stat-bldg')) document.getElementById('stat-bldg').innerText = state.features.filter(f => f.category === CATEGORIES.BUILDING).length;
+            if(document.getElementById('stat-lm')) document.getElementById('stat-lm').innerText = state.features.filter(f => f.category === CATEGORIES.LANDMARK).length;
+            if(document.getElementById('stat-lines')) document.getElementById('stat-lines').innerText = state.features.filter(f => f.category === CATEGORIES.LINE).length;
         } else {
             settingsMenu.classList.add('-translate-x-full');
-            menuOverlay.classList.add('hidden');
+            if(menuOverlay) menuOverlay.classList.add('hidden');
         }
     };
 
-    btnMenu.addEventListener('click', toggleMenu);
-    btnCloseMenu.addEventListener('click', toggleMenu);
-    menuOverlay.addEventListener('click', toggleMenu);
+    if(btnMenu) btnMenu.addEventListener('click', toggleMenu);
+    if(btnCloseMenu) btnCloseMenu.addEventListener('click', toggleMenu);
+    if(menuOverlay) menuOverlay.addEventListener('click', toggleMenu);
 
-    // Emergency Reset Wiring
-    document.getElementById('btn-emergency-reset').addEventListener('click', () => {
-        clearDraft();
-    });
+    if(document.getElementById('btn-emergency-reset')) {
+        document.getElementById('btn-emergency-reset').addEventListener('click', () => clearDraft());
+    }
 }
