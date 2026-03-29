@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Geographic Engine (Sprint 5 Master)
- * Features: Auto-Panning GPS, Multi-Layer Tiles, and Area Locking.
+ * MAP LAYOUT DRAFTER - Geographic Engine (Final Master)
+ * Cures "Trapped Viewport" via Omni-Vault Viewport Anchoring.
  */
 
 import { state } from './config.js';
@@ -17,17 +17,30 @@ export let isGPSActive = false;
 let watchId = null;
 
 /**
- * Initializes the Leaflet Map
+ * Initializes the Leaflet Map with Omni-Vault Memory
  */
 export function initMap() {
-    console.log("[Map Engine] Initializing V5...");
+    console.log("[Map Engine] Initializing V6 Omni-Vault Anchor...");
+
+    // Default Fallback (Bhubaneswar)
+    let startLat = 20.296;
+    let startLng = 85.824;
+    let startZoom = 14;
+
+    // ELITE FIX: If the Omni-Vault has saved our exact location, teleport there first!
+    if (state.ui.mapCenterLat && state.ui.mapCenterLng) {
+        startLat = state.ui.mapCenterLat;
+        startLng = state.ui.mapCenterLng;
+        startZoom = state.ui.mapZoom || 17;
+        console.log(`[Map Engine] Viewport Anchor found. Teleporting to ${startLat}, ${startLng}`);
+    }
 
     map = L.map('map', {
         zoomControl: false,
         attributionControl: false,
         zoomAnimation: true,
         fadeAnimation: true
-    }).setView([20.296, 85.824], 14); 
+    }).setView([startLat, startLng], startZoom); 
 
     // Pre-load all professional Tile Layers
     satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 22, detectRetina: true });
@@ -40,22 +53,28 @@ export function initMap() {
 }
 
 /**
- * Locks the map boundaries to the current viewport
+ * Locks the map boundaries and saves the Anchor to the Omni-Vault
  */
 export function lockArea() {
     if (!map) return;
 
     const currentBounds = map.getBounds();
     const currentZoom = map.getZoom();
+    const currentCenter = map.getCenter();
 
     state.ui.isAreaLocked = true;
+    
+    // ELITE FIX: Save exact coordinates into state so Omni-Vault can back them up
+    state.ui.mapCenterLat = currentCenter.lat;
+    state.ui.mapCenterLng = currentCenter.lng;
+    state.ui.mapZoom = currentZoom;
     state.ui.mapBounds = currentBounds;
 
     map.setMaxBounds(currentBounds);
     map.setMinZoom(currentZoom);
     map.options.maxBoundsViscosity = 1.0; 
 
-    console.log("[Map Engine] Area Locked Manually.");
+    console.log("[Map Engine] Area Locked & Viewport Anchored.");
 }
 
 /**
@@ -81,12 +100,12 @@ export function toggleGPS() {
         userLocationMarker = null;
         accuracyCircle = null;
         isGPSActive = false;
-        state.ui.hasPannedToGPS = false; // Reset the pan lock
+        state.ui.hasPannedToGPS = false; 
         updateGPSIndicator('gray', 'Off');
     } else {
         // Turn On
         isGPSActive = true;
-        state.ui.hasPannedToGPS = false; // Prepare to pan
+        state.ui.hasPannedToGPS = false; 
         updateGPSIndicator('yellow', 'Locating...');
         startGPS();
     }
@@ -109,10 +128,9 @@ function startGPS() {
             state.gps.lng = lng;
             state.gps.accuracy = accuracy;
 
-            // ELITE FIX: Auto-Pan to location on first successful lock
             if (!state.ui.hasPannedToGPS && accuracy <= 100) {
                 map.flyTo([lat, lng], 18, { duration: 1.5 });
-                state.ui.hasPannedToGPS = true; // Prevents the map from trapping the user
+                state.ui.hasPannedToGPS = true; 
             }
 
             updateLocationMarker(lat, lng, accuracy);

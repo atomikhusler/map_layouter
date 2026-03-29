@@ -1,9 +1,11 @@
+
 /**
- * LAYOUT MAP DRAFTER
- * Central Configuration & State Engine
+ * MAP LAYOUT DRAFTER
+ * Central Configuration & Omni-Vault State Engine (V7 Master)
  */
 
 export const state = {
+    // GLOBAL USER SETTINGS
     user: {
         enumeratorName: "",
         enumeratorId: "",
@@ -11,13 +13,13 @@ export const state = {
         districtId: ""
     },
     
+    // GLOBAL UI PREFERENCES
     ui: {
         phase: 1,                 
         currentCategory: "hand",  
         currentTool: "pan",       
-        smokiness: 0,             
-        isAreaLocked: false,      
-        mapBounds: null           
+        smokiness: 0,
+        isDarkMode: false
     },
     
     gps: {
@@ -27,13 +29,49 @@ export const state = {
         isTracking: false
     },
     
-    // THE VAULT
-    features: [],
-    
-    // UNDO/REDO MEMORY BANKS
-    undoStack: [],
-    redoStack: []
+    // MULTI-PROJECT REGISTRY (The 3-Slot System)
+    activeProjectId: "draft_1",
+    projects: {
+        "draft_1": {
+            id: "draft_1",
+            name: "Draft 1",
+            isAreaLocked: false,
+            mapCenterLat: null,
+            mapCenterLng: null,
+            mapZoom: null,
+            features: [],
+            undoStack: [],
+            redoStack: []
+        },
+        "draft_2": {
+            id: "draft_2",
+            name: "Draft 2",
+            isAreaLocked: false,
+            mapCenterLat: null,
+            mapCenterLng: null,
+            mapZoom: null,
+            features: [],
+            undoStack: [],
+            redoStack: []
+        },
+        "draft_3": {
+            id: "draft_3",
+            name: "Draft 3",
+            isAreaLocked: false,
+            mapCenterLat: null,
+            mapCenterLng: null,
+            mapZoom: null,
+            features: [],
+            undoStack: [],
+            redoStack: []
+        }
+    }
 };
+
+// ELITE HELPER: Always returns the currently active project's data
+export function getActiveProject() {
+    return state.projects[state.activeProjectId];
+}
 
 export const CATEGORIES = {
     HAND: 'hand',
@@ -56,15 +94,16 @@ export const TOOLS = {
     LINE_PATHWAY: 'line_pathway',
     LINE_UNMETALLED: 'line_unmetalled',
     LINE_METALLED: 'line_metalled',
-    LINE_MAINROAD: 'line_mainroad', // NEW: True Parallel Black Lines
+    LINE_MAINROAD: 'line_mainroad', 
     LINE_BOUNDARY: 'line_boundary',
     LINE_FREEHAND: 'line_freehand',
     
+    // Upgraded Landmark Tools (New Geometric Shapes)
     LM_TAP: 'lm_tap',
-    LM_HANDPUMP: 'lm_handpump',
     LM_TEMPLE: 'lm_temple',
-    LM_MASJID: 'lm_masjid',
-    LM_CHURCH: 'lm_church',
+    LM_SQUARE: 'lm_square',
+    LM_PENTAGON: 'lm_pentagon',
+    LM_HEXAGON: 'lm_hexagon',
     LM_CUSTOM: 'lm_custom',           
     
     ERASER: 'eraser'

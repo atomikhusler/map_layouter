@@ -1,17 +1,14 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Final Master)
- * Features: 0-Error Event Bubbling, Bounded FAB Dragging, Module Crash Prevention.
+ * MAP LAYOUT DRAFTER - Main Controller (V7 Master)
+ * Hooks the Glass UI to the Omni-Vault and Project Manager.
  */
 
-import { state, CATEGORIES, TOOLS } from './config.js';
-import { initMap, lockArea, map, toggleBaseMap, toggleGPS } from './map.js';
+import { state, CATEGORIES, TOOLS, getActiveProject } from './config.js';
+import { initMap, lockArea, map, toggleGPS } from './map.js';
 import { initSymbols, redrawAllFeatures } from './symbol.js'; 
-
-// ELITE FIX: Wildcard Import prevents the app from fatally crashing 
-// because your current export.js file is missing the PNG and JSON functions.
 import * as Exporter from './export.js'; 
-
 import { loadDraftLocally, clearDraft, saveDraftLocally } from './storage.js';
+import { switchProject, renameProject, deleteProject } from './projectManager.js';
 
 window.appLogs = [];
 const originalLog = console.log;
@@ -26,52 +23,72 @@ console.error = function(...args) {
     originalError.apply(console, args);
 };
 
+// Modals State
+let pendingTargetProjectId = null;
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Prevent Android hardware back button from closing/resetting the app
+    // Hardware Back Button Lock
     window.history.pushState(null, null, window.location.href);
     window.onpopstate = function () {
         window.history.pushState(null, null, window.location.href);
+        saveDraftLocally(); // Force a save just in case
         alert("Please use the on-screen menus to navigate. Back button disabled to prevent data loss.");
     };
 
-    // Added 'e.scale &&' to prevent Android devices from freezing
+    // Prevent Android zoom freezing
     document.addEventListener('touchmove', (e) => {
         if (e.scale && e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { 
             e.preventDefault(); 
         } 
     }, { passive: false });
 
+    // 1. Load Data & Boot Engines
+    const hasSavedData = loadDraftLocally();
     initMap();
     initSymbols();
     
-    const hasSavedData = loadDraftLocally();
-    if (hasSavedData && state.features.length > 0) {
-        state.undoStack.push(JSON.parse(JSON.stringify(state.features)));
+    // 2. Re-apply UI Preferences
+    if (state.ui.isDarkMode) {
+        document.body.classList.add('dark');
+        const darkToggle = document.getElementById('toggle-dark-mode');
+        if (darkToggle) darkToggle.checked = true;
+    }
 
-        if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
-        if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
-        if(document.getElementById('display-area-id')) document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
+    if (state.ui.smokiness) {
+        const slider = document.getElementById('smokiness-slider');
+        if (slider) slider.value = state.ui.smokiness;
+        const opacity = 1 - (state.ui.smokiness / 100);
+        const tilePane = document.querySelector('.leaflet-tile-pane');
+        if (tilePane) tilePane.style.opacity = opacity.toString();
+    }
+
+    // 3. Context-Aware Boot: Check if the *active* project has a locked area
+    const activeProject = getActiveProject();
+    if (hasSavedData && activeProject.isAreaLocked) {
+        document.getElementById('setup-layer').classList.add('hidden');
+        document.getElementById('ui-layer').classList.remove('hidden');
+        document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId || "Unknown"} (${activeProject.name})`;
+        
         lockArea();
         redrawAllFeatures(); 
     } else {
         initPhase1Setup(); 
     }
 
-    initFABLogic();
+    // 4. Initialize UI Listeners
+    initDockLogic();
     initUIControls();
-    
-    makeDraggable(document.getElementById('fab-container'));
+    initProjectDrawerLogic();
 });
 
 // ==========================================
-// 3. PHASE 1: SPLIT SETUP & HUMANIZED SEARCH
+// SETUP PHASE (Area Search & Lock)
 // ==========================================
 function initPhase1Setup() {
     const btnToStepB = document.getElementById('btn-to-step-b');
     const btnLock = document.getElementById('btn-lock-area');
     const inputName = document.getElementById('setup-name');
     const inputArea = document.getElementById('setup-area');
-    
     const searchInput = document.getElementById('map-search');
     const btnSearch = document.getElementById('btn-search');
     const suggestionsBox = document.getElementById('search-suggestions');
@@ -99,20 +116,16 @@ function initPhase1Setup() {
         btnSearch.addEventListener('click', async () => {
             const query = searchInput.value.trim();
             if (!query) return;
-            
             try {
                 btnSearch.innerText = "...";
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
                 const data = await response.json();
-                
                 suggestionsBox.innerHTML = ''; 
-                
                 if (data.length > 0) {
                     data.forEach(place => {
                         const li = document.createElement('li');
-                        li.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-100 dark:border-gray-700 last:border-0 text-gray-700 dark:text-gray-200 transition-colors';
+                        li.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-100 dark:border-gray-700 last:border-0 text-gray-700 dark:text-gray-200';
                         li.innerText = place.display_name;
-                        
                         li.onclick = () => {
                             map.flyTo([place.lat, place.lon], 17, { duration: 1.5 });
                             suggestionsBox.classList.add('hidden');
@@ -126,28 +139,17 @@ function initPhase1Setup() {
                     suggestionsBox.classList.remove('hidden');
                 }
             } catch (err) {
-                console.error("Search failed", err);
-                suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">Network Error. Check connection.</li>';
+                suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">Network Error.</li>';
                 suggestionsBox.classList.remove('hidden');
             } finally {
                 btnSearch.innerText = "Search";
             }
         });
 
-        // ELITE FIX: 100% Linter-Proof Click-Away Logic. 
-        // Using Event Bubbling entirely eliminates the need for 'e.target' and 'instanceof Node'.
         const searchContainer = searchInput.parentElement.parentElement;
-        if (searchContainer) {
-            searchContainer.addEventListener('click', (e) => {
-                e.stopPropagation(); // Stops clicks inside the search UI from reaching the document
-            });
-        }
-        
+        if (searchContainer) searchContainer.addEventListener('click', (e) => e.stopPropagation());
         document.addEventListener('click', () => {
-            // If a click reaches the document, it MUST be outside the search container
-            if (!suggestionsBox.classList.contains('hidden')) {
-                suggestionsBox.classList.add('hidden');
-            }
+            if (!suggestionsBox.classList.contains('hidden')) suggestionsBox.classList.add('hidden');
         });
     }
 
@@ -157,113 +159,43 @@ function initPhase1Setup() {
             state.user.hlbId = inputArea ? inputArea.value.trim() : "Unknown";
             state.ui.phase = 2;
 
-            if(document.getElementById('display-area-id')) {
-                document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
-            }
+            const activeProject = getActiveProject();
+            document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId} (${activeProject.name})`;
 
             lockArea(); 
+            saveDraftLocally();
 
-            if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
-            if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
+            document.getElementById('setup-layer').classList.add('hidden');
+            document.getElementById('ui-layer').classList.remove('hidden');
         });
     }
 }
 
 // ==========================================
-// 4. ELITE BOUNDED DRAGGABLE FAB ENGINE
+// FLOATING DOCK LOGIC
 // ==========================================
-function makeDraggable(container) {
-    if (!container) return;
-    const dragHandle = document.getElementById('fab-main');
-    if (!dragHandle) return;
-
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-
-    dragHandle.onmousedown = dragStart;
-    dragHandle.ontouchstart = dragStart;
-
-    function dragStart(e) {
-        e = e || window.event;
-        if(e.type === 'touchstart') {
-            pos3 = e.touches[0].clientX;
-            pos4 = e.touches[0].clientY;
-        } else {
-            pos3 = e.clientX;
-            pos4 = e.clientY;
-        }
-        document.onmouseup = closeDrag;
-        document.ontouchend = closeDrag;
-        document.onmousemove = elementDrag;
-        document.ontouchmove = elementDrag;
-    }
-
-    function elementDrag(e) {
-        e = e || window.event;
-        let clientX, clientY;
-        if(e.type === 'touchmove') {
-            clientX = e.touches[0].clientX;
-            clientY = e.touches[0].clientY;
-        } else {
-            e.preventDefault();
-            clientX = e.clientX;
-            clientY = e.clientY;
-        }
-
-        pos1 = pos3 - clientX;
-        pos2 = pos4 - clientY;
-        pos3 = clientX;
-        pos4 = clientY;
-
-        let newTop = container.offsetTop - pos2;
-        let newLeft = container.offsetLeft - pos1;
-
-        const maxTop = window.innerHeight - container.offsetHeight - 10;
-        const maxLeft = window.innerWidth - container.offsetWidth - 10;
-        
-        if (newTop < 10) newTop = 10;
-        if (newTop > maxTop) newTop = maxTop;
-        if (newLeft < 10) newLeft = 10;
-        if (newLeft > maxLeft) newLeft = maxLeft;
-
-        container.style.top = newTop + "px";
-        container.style.left = newLeft + "px";
-        container.style.bottom = "auto";
-        container.style.right = "auto";
-    }
-
-    function closeDrag() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-        document.ontouchend = null;
-        document.ontouchmove = null;
-    }
-}
-
-// ==========================================
-// 5. THE FAB MENU ENGINE
-// ==========================================
-function initFABLogic() {
-    const fabMain = document.getElementById('fab-main');
-    const fabCategories = document.getElementById('fab-categories');
-    const fabSubmenu = document.getElementById('fab-submenu');
-    if(!fabMain || !fabCategories) return;
-
-    fabMain.addEventListener('click', () => {
-        fabCategories.classList.toggle('hidden');
-        fabCategories.classList.toggle('flex');
-        if(fabSubmenu) fabSubmenu.classList.add('hidden');
-    });
-
-    document.querySelectorAll('.fab-cat-btn').forEach(btn => {
+function initDockLogic() {
+    const dockButtons = document.querySelectorAll('.fab-cat-btn');
+    dockButtons.forEach(btn => {
         btn.addEventListener('click', (e) => {
+            // Visual Update
+            dockButtons.forEach(b => {
+                b.classList.remove('bg-blue-100', 'text-blue-600', 'dark:bg-blue-900/40', 'dark:text-blue-400');
+                b.classList.add('text-gray-600', 'dark:text-gray-300');
+            });
+            e.currentTarget.classList.remove('text-gray-600', 'dark:text-gray-300');
+            e.currentTarget.classList.add('bg-blue-100', 'text-blue-600', 'dark:bg-blue-900/40', 'dark:text-blue-400');
+
+            // State Update
             const category = e.currentTarget.getAttribute('data-cat');
             state.ui.currentCategory = category;
-            fabMain.innerHTML = e.currentTarget.innerHTML;
             populateSubMenu(category);
-            fabCategories.classList.add('hidden');
-            fabCategories.classList.remove('flex');
         });
     });
+
+    // Set default tool
+    const defaultBtn = document.querySelector('.fab-cat-btn[data-cat="hand"]');
+    if (defaultBtn) defaultBtn.click();
 }
 
 function populateSubMenu(category) {
@@ -272,47 +204,51 @@ function populateSubMenu(category) {
     submenu.innerHTML = ''; 
     let toolsHTML = '';
 
-    if (category === CATEGORIES.HAND) {
+    if (category === CATEGORIES.HAND || category === CATEGORIES.ERASER) {
         submenu.classList.add('hidden');
-        setActiveTool(TOOLS.PAN);
-        return; 
-    } else if (category === CATEGORIES.ERASER) {
-        submenu.classList.add('hidden');
-        setActiveTool(TOOLS.ERASER);
+        setActiveTool(category === CATEGORIES.HAND ? TOOLS.PAN : TOOLS.ERASER);
         return; 
     } else if (category === CATEGORIES.BUILDING) {
         toolsHTML = `
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_RES}"><div class="w-6 h-6 border-2 border-black bg-white"></div></button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_NON_RES}"><div class="w-6 h-6 border-2 border-black" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_RES}"><div class="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"></div></button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_NON_RES}"><div class="relative w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"><div class="absolute top-[2px] -left-[8px] w-[16px] h-[16px]" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></div></button>
+            <button class="tool-btn w-10 h-10 flex justify-center items-center bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent active:scale-90 transition-all" data-tool="${TOOLS.PUCCA_RES}"><div class="w-5 h-5 border-2 border-black bg-white"></div></button>
+            <button class="tool-btn w-10 h-10 flex justify-center items-center bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent active:scale-90 transition-all" data-tool="${TOOLS.PUCCA_NON_RES}"><div class="w-5 h-5 border-2 border-black" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></button>
+            <button class="tool-btn w-10 h-10 flex justify-center items-center bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent active:scale-90 transition-all" data-tool="${TOOLS.KUTCHA_RES}"><div class="w-0 h-0 border-l-[10px] border-r-[10px] border-b-[16px] border-l-transparent border-r-transparent border-b-black"></div></button>
+            <button class="tool-btn w-10 h-10 flex justify-center items-center bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent active:scale-90 transition-all" data-tool="${TOOLS.KUTCHA_NON_RES}"><div class="relative w-0 h-0 border-l-[10px] border-r-[10px] border-b-[16px] border-l-transparent border-r-transparent border-b-black"><div class="absolute top-[2px] -left-[6px] w-[12px] h-[12px]" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></div></button>
         `;
     } else if (category === CATEGORIES.LINE) {
         toolsHTML = `
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_MAINROAD}">Main</button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_STRAIGHT}">Straight</button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_PATHWAY}">Path</button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_FREEHAND}">Draw</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LINE_MAINROAD}">Main</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LINE_STRAIGHT}">Straight</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LINE_PATHWAY}">Path</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LINE_FREEHAND}">Draw</button>
         `;
     } else if (category === CATEGORIES.LANDMARK) {
         toolsHTML = `
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LM_TAP}">[Tap]</button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LM_TEMPLE}">[Temple]</button>
-            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LM_CUSTOM}">(+)</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_TAP}">Tap</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_TEMPLE}">Temple</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_SQUARE}">Square</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_CUSTOM}">(+)</button>
         `;
     }
 
     submenu.innerHTML = toolsHTML;
     submenu.classList.remove('hidden');
-    submenu.classList.add('flex');
 
     submenu.querySelectorAll('.tool-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             setActiveTool(e.currentTarget.getAttribute('data-tool'));
-            submenu.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-            e.currentTarget.classList.add('active');
+            submenu.querySelectorAll('.tool-btn').forEach(b => {
+                b.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/30');
+                b.classList.add('border-transparent', 'bg-gray-100', 'dark:bg-gray-700');
+            });
+            e.currentTarget.classList.remove('border-transparent', 'bg-gray-100', 'dark:bg-gray-700');
+            e.currentTarget.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/30');
         });
     });
+
+    // Auto-select first tool
+    const firstTool = submenu.querySelector('.tool-btn');
+    if (firstTool) firstTool.click();
 }
 
 function setActiveTool(toolId) {
@@ -320,22 +256,20 @@ function setActiveTool(toolId) {
 }
 
 // ==========================================
-// 6. GENERIC UI CONTROLS & MEMORY ENGINE
+// UI CONTROLS & EXPORTS
 // ==========================================
 function initUIControls() {
     
+    // Developer Logs
     const brandingPill = document.getElementById('branding-pill');
-    let tapCount = 0;
-    let tapTimer;
+    let tapCount = 0; let tapTimer;
     if (brandingPill) {
         brandingPill.addEventListener('click', () => {
-            tapCount++;
-            clearTimeout(tapTimer);
+            tapCount++; clearTimeout(tapTimer);
             if (tapCount >= 5) {
                 tapCount = 0;
                 if(confirm("DEVELOPER MODE: Download internal error logs?")) {
-                    const logContent = window.appLogs.join('\n');
-                    const blob = new Blob([logContent || "No errors logged."], { type: 'text/plain' });
+                    const blob = new Blob([window.appLogs.join('\n') || "No errors."], { type: 'text/plain' });
                     const link = document.createElement("a");
                     link.href = URL.createObjectURL(blob);
                     link.download = `LMD_Logs_${Date.now()}.txt`;
@@ -346,40 +280,13 @@ function initUIControls() {
         });
     }
 
-    const darkToggle = document.getElementById('toggle-dark-mode');
-    if (darkToggle) {
-        darkToggle.addEventListener('change', (e) => {
-            if (e.target.checked) document.body.classList.add('dark');
-            else document.body.classList.remove('dark');
-        });
-    }
-
-    const btnUndo = document.getElementById('btn-undo');
-    const btnRedo = document.getElementById('btn-redo');
-
-    if (btnUndo) {
-        btnUndo.addEventListener('click', () => {
-            if (state.undoStack.length > 0) {
-                const currentState = state.undoStack.pop();
-                state.redoStack.push(currentState);
-                state.features = state.undoStack.length > 0 ? JSON.parse(JSON.stringify(state.undoStack[state.undoStack.length - 1])) : [];
-                redrawAllFeatures();
-                saveDraftLocally();
-            }
-        });
-    }
-
-    if (btnRedo) {
-        btnRedo.addEventListener('click', () => {
-            if (state.redoStack.length > 0) {
-                const nextState = state.redoStack.pop();
-                state.undoStack.push(nextState);
-                state.features = JSON.parse(JSON.stringify(nextState));
-                redrawAllFeatures();
-                saveDraftLocally();
-            }
-        });
-    }
+    // Settings Menu
+    document.getElementById('toggle-dark-mode').addEventListener('change', (e) => {
+        state.ui.isDarkMode = e.target.checked; 
+        if (e.target.checked) document.body.classList.add('dark');
+        else document.body.classList.remove('dark');
+        saveDraftLocally();
+    });
 
     const slider = document.getElementById('smokiness-slider');
     if (slider) {
@@ -389,97 +296,217 @@ function initUIControls() {
             const tilePane = document.querySelector('.leaflet-tile-pane');
             if (tilePane) tilePane.style.opacity = opacity.toString();
         });
+        slider.addEventListener('change', () => saveDraftLocally());
     }
 
-    const btnRefresh = document.getElementById('btn-refresh');
-    if (btnRefresh) btnRefresh.addEventListener('click', () => redrawAllFeatures());
-
-    const btnToggleGps = document.getElementById('btn-toggle-gps');
-    if (btnToggleGps) btnToggleGps.addEventListener('click', toggleGPS);
-
-    // --- Safe Export Menu Connections ---
-    if (document.getElementById('export-pdf')) {
-        document.getElementById('export-pdf').addEventListener('click', () => {
-            if (Exporter.generatePDF) Exporter.generatePDF();
-            else alert("Update your export.js file to enable PDF generation.");
-        });
-    }
-
-    if (document.getElementById('export-png')) {
-        document.getElementById('export-png').addEventListener('click', async () => {
-            if (Exporter.generatePNG) {
-                const imgData = await Exporter.generatePNG();
-                if (imgData) {
-                    const link = document.createElement("a");
-                    link.href = imgData;
-                    link.download = `Map_Layout_${state.user.hlbId || "Draft"}.png`;
-                    link.click();
-                }
-            } else {
-                alert("Update your export.js file to enable PNG generation.");
-            }
-        });
-    }
-
-    if (document.getElementById('export-csv')) {
-        document.getElementById('export-csv').addEventListener('click', () => {
-            if (Exporter.generateCSV) Exporter.generateCSV();
-        });
-    }
-
-    if (document.getElementById('export-json')) {
-        document.getElementById('export-json').addEventListener('click', () => {
-            if (Exporter.generateJSON) Exporter.generateJSON();
-            else alert("Update your export.js file to enable JSON generation.");
-        });
-    }
-
-    document.querySelectorAll('.map-layer-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            document.querySelectorAll('.map-layer-btn').forEach(b => {
-                b.classList.remove('bg-blue-50', 'border-blue-500', 'text-blue-700');
-                b.classList.add('bg-gray-50', 'border-transparent', 'text-gray-600');
-            });
-            const target = e.currentTarget;
-            target.classList.remove('bg-gray-50', 'border-transparent', 'text-gray-600');
-            target.classList.add('bg-blue-50', 'border-blue-500', 'text-blue-700');
-            toggleBaseMap(target.getAttribute('data-layer'));
-        });
+    // Top Bar Tools
+    document.getElementById('btn-undo').addEventListener('click', () => {
+        const activeProject = getActiveProject();
+        if (activeProject.undoStack.length > 0) {
+            const currentState = activeProject.undoStack.pop();
+            activeProject.redoStack.push(currentState);
+            activeProject.features = activeProject.undoStack.length > 0 ? JSON.parse(JSON.stringify(activeProject.undoStack[activeProject.undoStack.length - 1])) : [];
+            redrawAllFeatures();
+            saveDraftLocally();
+        }
     });
 
-    if(document.getElementById('btn-force-redraw')) {
-        document.getElementById('btn-force-redraw').addEventListener('click', () => {
+    document.getElementById('btn-redo').addEventListener('click', () => {
+        const activeProject = getActiveProject();
+        if (activeProject.redoStack.length > 0) {
+            const nextState = activeProject.redoStack.pop();
+            activeProject.undoStack.push(nextState);
+            activeProject.features = JSON.parse(JSON.stringify(nextState));
             redrawAllFeatures();
-            alert("Deep Sync Render completed.");
-        });
-    }
+            saveDraftLocally();
+        }
+    });
 
-    if(document.getElementById('btn-emergency-reset')) {
-        document.getElementById('btn-emergency-reset').addEventListener('click', () => {
-            if(confirm("CRITICAL WARNING: This will permanently delete your drafted layout. Proceed?")) clearDraft();
-        });
-    }
+    document.getElementById('btn-refresh').addEventListener('click', () => redrawAllFeatures());
+    document.getElementById('btn-toggle-gps').addEventListener('click', toggleGPS);
+
+    // Exports
+    document.getElementById('export-pdf').addEventListener('click', () => { if (Exporter.generatePDF) Exporter.generatePDF(); });
+    document.getElementById('export-png').addEventListener('click', async () => {
+        if (Exporter.generatePNG) {
+            const imgData = await Exporter.generatePNG();
+            if (imgData) {
+                const link = document.createElement("a"); link.href = imgData; link.download = `Map_${state.user.hlbId}.png`; link.click();
+            }
+        }
+    });
+    document.getElementById('export-csv').addEventListener('click', () => { if (Exporter.generateCSV) Exporter.generateCSV(); });
+    document.getElementById('export-json').addEventListener('click', () => { if (Exporter.generateJSON) Exporter.generateJSON(); });
+
+    document.getElementById('btn-emergency-reset').addEventListener('click', () => {
+        if(confirm("CRITICAL WARNING: This eradicates the Omni-Vault memory permanently. Proceed?")) clearDraft();
+    });
+
+    // Inspector Close
+    document.getElementById('btn-close-inspector').addEventListener('click', () => {
+        document.getElementById('inspector-panel').classList.add('scale-95', 'opacity-0', 'pointer-events-none');
+        setTimeout(() => document.getElementById('inspector-panel').classList.add('hidden'), 200);
+        document.getElementById('ui-overlay').classList.add('opacity-0', 'pointer-events-none');
+    });
+}
+
+// ==========================================
+// PROJECT DRAWER LOGIC
+// ==========================================
+function initProjectDrawerLogic() {
     const btnMenu = document.getElementById('btn-menu');
     const btnCloseMenu = document.getElementById('btn-close-menu');
     const settingsMenu = document.getElementById('settings-menu');
-    const menuOverlay = document.getElementById('menu-overlay');
+    const uiOverlay = document.getElementById('ui-overlay');
+    const popover = document.getElementById('popover-project-actions');
+    const switchModal = document.getElementById('modal-project-switch');
 
+    // Toggle Drawer
     const toggleMenu = () => {
-        if(!settingsMenu) return;
-        const isClosed = settingsMenu.classList.contains('-translate-x-full');
+        const isClosed = settingsMenu.classList.contains('translate-x-full');
         if (isClosed) {
-            settingsMenu.classList.remove('-translate-x-full');
-            if(menuOverlay) menuOverlay.classList.remove('hidden');
-            if(document.getElementById('stat-bldg')) document.getElementById('stat-bldg').innerText = state.features.filter(f => f.category === CATEGORIES.BUILDING).length;
-            if(document.getElementById('stat-lm')) document.getElementById('stat-lm').innerText = state.features.filter(f => f.category === CATEGORIES.LANDMARK).length;
-            if(document.getElementById('stat-lines')) document.getElementById('stat-lines').innerText = state.features.filter(f => f.category === CATEGORIES.LINE).length;
+            renderProjectCards(); // Refresh UI before opening
+            settingsMenu.classList.remove('translate-x-full');
+            uiOverlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+            uiOverlay.classList.add('opacity-100');
         } else {
-            settingsMenu.classList.add('-translate-x-full');
-            if(menuOverlay) menuOverlay.classList.add('hidden');
+            settingsMenu.classList.add('translate-x-full');
+            uiOverlay.classList.add('opacity-0', 'pointer-events-none');
+            popover.classList.add('hidden'); // Ensure popover closes
         }
     };
 
-    if(btnMenu) btnMenu.addEventListener('click', toggleMenu);
-    if(btnCloseMenu) btnCloseMenu.addEventListener('click', toggleMenu);
-    if(menuOverlay) menuOverlay.addEventListener('click', toggleMenu);
+    btnMenu.addEventListener('click', toggleMenu);
+    btnCloseMenu.addEventListener('click', toggleMenu);
+    uiOverlay.addEventListener('click', () => {
+        if (!settingsMenu.classList.contains('translate-x-full')) toggleMenu();
+        if (!switchModal.classList.contains('hidden')) closeSwitchModal();
+        popover.classList.add('hidden');
+    });
+
+    // Switch Modal Buttons
+    document.getElementById('btn-cancel-switch').addEventListener('click', closeSwitchModal);
+    document.getElementById('btn-confirm-switch').addEventListener('click', () => {
+        if (pendingTargetProjectId) {
+            switchProject(pendingTargetProjectId);
+            renderProjectCards(); // Update borders
+        }
+        closeSwitchModal();
+        toggleMenu(); // Close drawer after switch
+    });
+    // Popover Actions
+    document.getElementById('action-rename-project').addEventListener('click', () => {
+        if (!pendingTargetProjectId) return;
+        const project = state.projects[pendingTargetProjectId];
+        const newName = prompt("Rename Project:", project.name);
+        if (newName) {
+            renameProject(pendingTargetProjectId, newName);
+            renderProjectCards();
+        }
+        popover.classList.add('hidden');
+    });
+
+    document.getElementById('action-delete-project').addEventListener('click', () => {
+        if (!pendingTargetProjectId) return;
+        if (confirm(`CRITICAL: Permanently delete all map data for "${state.projects[pendingTargetProjectId].name}"?`)) {
+            deleteProject(pendingTargetProjectId);
+            renderProjectCards();
+        }
+        popover.classList.add('hidden');
+    });
+}
+
+export function renderProjectCards() {
+    const container = document.getElementById('project-list-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    Object.keys(state.projects).forEach(id => {
+        const p = state.projects[id];
+        const isActive = (id === state.activeProjectId);
+        const featureCount = p.features ? p.features.length : 0;
+        const statusText = isActive ? "Active Project" : (p.isAreaLocked ? `${featureCount} Features` : "Empty Slot");
+        
+        // Styling based on active status
+        const cardClass = isActive 
+            ? "project-card relative bg-blue-50 dark:bg-blue-900/20 p-3.5 rounded-xl border-2 border-blue-500 shadow-sm cursor-pointer transition-all"
+            : "project-card relative bg-gray-50 dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer hover:border-blue-400 transition-all";
+            
+        const titleClass = isActive ? "font-bold text-sm text-blue-800 dark:text-blue-300" : "font-bold text-sm text-gray-700 dark:text-gray-200";
+        const subClass = isActive ? "text-[10px] text-blue-600/80 dark:text-blue-400 mt-0.5" : "text-[10px] text-gray-500 mt-0.5";
+
+        const cardHTML = `
+            <div id="${id}_card" class="${cardClass}" data-id="${id}">
+                <div class="flex justify-between items-start pointer-events-none">
+                    <div>
+                        <h4 class="${titleClass}">${p.name}</h4>
+                        <p class="${subClass}">${statusText}</p>
+                    </div>
+                </div>
+                <button class="absolute top-3 right-3 p-1 text-gray-400 hover:text-blue-600 pointer-events-auto z-10 project-menu-trigger" data-id="${id}">⋮</button>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', cardHTML);
+    });
+
+    // Attach listeners to new cards
+    document.querySelectorAll('.project-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+            // Ignore if they clicked the 3 dots
+            if (e.target.classList.contains('project-menu-trigger')) return; 
+            
+            const targetId = card.getAttribute('data-id');
+            if (targetId !== state.activeProjectId && state.projects[targetId].isAreaLocked) {
+                pendingTargetProjectId = targetId;
+                openSwitchModal(state.projects[targetId].name);
+            } else if (targetId !== state.activeProjectId && !state.projects[targetId].isAreaLocked) {
+                // Instantly switch to empty projects without modal
+                switchProject(targetId);
+                renderProjectCards();
+            }
+        });
+    });
+
+    // Attach listeners to 3-dots
+    document.querySelectorAll('.project-menu-trigger').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            pendingTargetProjectId = e.currentTarget.getAttribute('data-id');
+            const popover = document.getElementById('popover-project-actions');
+            
+            // Calculate popover position
+            const rect = e.currentTarget.getBoundingClientRect();
+            popover.style.top = `${rect.bottom + 5}px`;
+            popover.style.right = `${window.innerWidth - rect.right}px`;
+            popover.style.left = 'auto'; // ensure it anchors to right side
+            
+            popover.classList.remove('hidden');
+        });
+    });
+}
+
+function openSwitchModal(projectName) {
+    const modal = document.getElementById('modal-project-switch');
+    const overlay = document.getElementById('ui-overlay');
+    // Ensure overlay covers drawer
+    overlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+    overlay.classList.add('opacity-100', 'z-[110]'); 
+    modal.classList.remove('hidden');
+    
+    // Animate in
+    setTimeout(() => {
+        modal.classList.remove('scale-95', 'opacity-0');
+    }, 10);
+}
+
+function closeSwitchModal() {
+    const modal = document.getElementById('modal-project-switch');
+    const overlay = document.getElementById('ui-overlay');
+    
+    modal.classList.add('scale-95', 'opacity-0');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        // Restore overlay to normal drawer level if drawer is open
+        overlay.classList.remove('z-[110]');
+    }, 200);
 }

@@ -1,9 +1,9 @@
 /**
- * MAP LAYOUT DRAFTER - Elite Drafting Engine (Sprint 5 Master)
- * Features: Double-Tap Edit, SVG Triangles, Circle Landmarks, Parallel Pathways.
+ * MAP LAYOUT DRAFTER - Elite Drafting Engine (V7 Master)
+ * Features: Geometric Shapes, Scale Resizing, and Multi-Project Routing.
  */
 
-import { state, CATEGORIES, TOOLS } from './config.js';
+import { state, CATEGORIES, TOOLS, getActiveProject } from './config.js';
 import { map } from './map.js';
 import { saveDraftLocally } from './storage.js';
 
@@ -29,7 +29,7 @@ export function initSymbols() {
     map.on('zoom', scaleDraftSymbols);
     map.on('zoomend', scaleDraftSymbols);
 
-    console.log("[Drafting Engine] V5 Initialized: Double-Tap & Elite Vectors Online.");
+    console.log("[Drafting Engine] V7 Initialized: Geometric Shapes & Scale Engine Online.");
 }
 
 // ==========================================
@@ -92,8 +92,6 @@ function setupMapClickRouter() {
 // ==========================================
 function bindFeatureEvents(layer, featureData) {
     layer.on('click', () => handleFeatureTap(featureData, layer));
-    
-    // ELITE FIX: Double-Tap is much more reliable on Android than Long-Press
     layer.on('dblclick', () => handleRename(featureData, layer));
 }
 
@@ -106,10 +104,9 @@ function handleRename(feature, layer) {
             feature.label = `[${newName.trim()}]`;
             
             if (feature.category === CATEGORIES.LANDMARK) {
-                layer.setIcon(generateLandmarkIcon(feature.label));
+                layer.setIcon(generateLandmarkIcon(feature.type, feature.label, feature.scale || 1));
                 scaleDraftSymbols();
             } else if (feature.category === CATEGORIES.LINE) {
-                // Flash the line blue to confirm edit
                 layer.eachLayer(l => {
                     if (l.options.color === '#000' || l.options.color === '#4b5563') {
                         const originalColor = l.options.color;
@@ -124,30 +121,41 @@ function handleRename(feature, layer) {
 }
 
 // ==========================================
-// 3. ELITE VECTOR GENERATORS (Buildings & Landmarks)
+// 3. ELITE VECTOR GENERATORS (Geometry Engine)
 // ==========================================
-
-// Utility to extract initials (e.g. "School 1" -> "S1")
 function getInitials(fullName) {
     const raw = fullName.replace(/\[|\]/g, '').trim();
     const parts = raw.split(' ');
     let initials = parts[0].charAt(0).toUpperCase();
     if (parts.length > 1) {
         const lastPart = parts[parts.length - 1];
-        if (!isNaN(lastPart)) initials += lastPart; // Append number if it ends in one
-        else initials += lastPart.charAt(0).toUpperCase(); // Append letter
+        if (!isNaN(lastPart)) initials += lastPart; 
+        else initials += lastPart.charAt(0).toUpperCase(); 
     }
-    return initials.substring(0, 3); // Max 3 chars inside the circle
+    return initials.substring(0, 3); 
 }
 
-function generateLandmarkIcon(fullName) {
+function generateLandmarkIcon(tool, fullName, scaleMultiplier = 1) {
     const initials = getInitials(fullName);
-    const iconHtml = `<div class="w-8 h-8 rounded-full border-[2px] border-black bg-white shadow-md flex items-center justify-center font-black text-xs text-black">${initials}</div>`;
-    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
-    return L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
+    let iconHtml = '';
+
+    // The Geometric Shape Engine
+    if (tool === TOOLS.LM_SQUARE) {
+        iconHtml = `<div class="w-8 h-8 border-[2.5px] border-black bg-white shadow-md flex items-center justify-center font-black text-xs text-black">${initials}</div>`;
+    } else if (tool === TOOLS.LM_PENTAGON) {
+        iconHtml = `<div class="relative w-9 h-9 flex items-center justify-center drop-shadow-md"><svg width="36" height="36" viewBox="0 0 36 36" class="absolute inset-0"><polygon points="18,3 34,14 28,32 8,32 2,14" fill="white" stroke="black" stroke-width="2.5"/></svg><span class="relative z-10 font-black text-xs text-black mt-1">${initials}</span></div>`;
+    } else if (tool === TOOLS.LM_HEXAGON) {
+        iconHtml = `<div class="relative w-9 h-9 flex items-center justify-center drop-shadow-md"><svg width="36" height="36" viewBox="0 0 36 36" class="absolute inset-0"><polygon points="18,3 32,10 32,26 18,33 4,26 4,10" fill="white" stroke="black" stroke-width="2.5"/></svg><span class="relative z-10 font-black text-xs text-black">${initials}</span></div>`;
+    } else {
+        // Default Circle
+        iconHtml = `<div class="w-8 h-8 rounded-full border-[2px] border-black bg-white shadow-md flex items-center justify-center font-black text-xs text-black">${initials}</div>`;
+    }
+
+    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75" data-scale="${scaleMultiplier}">${iconHtml}</div>`;
+    return L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [44, 44], iconAnchor: [22, 22] });
 }
 
-function generateBuildingIcon(tool, bldgNo, houseCount) {
+function generateBuildingIcon(tool, bldgNo, houseCount, scaleMultiplier = 1) {
     let iconHtml = '';
     const hatch = `background: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px);`;
 
@@ -156,26 +164,25 @@ function generateBuildingIcon(tool, bldgNo, houseCount) {
     } else if (tool === TOOLS.PUCCA_NON_RES) {
         iconHtml = `<div class="w-7 h-7 border-[2px] border-black shadow flex items-center justify-center font-bold text-xs bg-white" style="${hatch}"><span class="bg-white/90 px-[1px] rounded">${bldgNo}</span></div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     } else if (tool === TOOLS.KUTCHA_RES) {
-        // ELITE FIX: True Hollow SVG Triangle
         iconHtml = `<div class="relative w-8 h-8 flex items-center justify-center drop-shadow"><svg width="28" height="28" viewBox="0 0 28 28" class="absolute inset-0"><polygon points="14,2 26,26 2,26" fill="white" stroke="black" stroke-width="2"/></svg><span class="relative z-10 text-[9px] font-bold text-black mt-2">${bldgNo}</span></div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     } else if (tool === TOOLS.KUTCHA_NON_RES) {
-        // ELITE FIX: True Hatched SVG Triangle
         iconHtml = `<div class="relative w-8 h-8 flex items-center justify-center drop-shadow"><svg width="28" height="28" viewBox="0 0 28 28" class="absolute inset-0"><defs><pattern id="hatch" width="4" height="4" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="4" stroke="black" stroke-width="1"/></pattern></defs><polygon points="14,2 26,26 2,26" fill="url(#hatch)" stroke="black" stroke-width="2"/><polygon points="14,2 26,26 2,26" fill="transparent" stroke="black" stroke-width="2"/></svg><span class="relative z-10 text-[9px] font-bold text-black bg-white/90 px-[2px] rounded mt-2">${bldgNo}</span></div><div class="text-[9px] font-bold text-black mt-0.5 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     }
 
-    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
-    return L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
+    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75" data-scale="${scaleMultiplier}">${iconHtml}</div>`;
+    return L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [44, 44], iconAnchor: [22, 22] });
 }
 
 function placeBuilding(latlng, tool) {
     const featureId = `bldg_${Date.now()}`;
     const bNo = currentBldgNo.toString();
     const hC = "1";
+    const scale = 1.0;
 
-    const divIcon = generateBuildingIcon(tool, bNo, hC);
+    const divIcon = generateBuildingIcon(tool, bNo, hC, scale);
     const marker = L.marker(latlng, { icon: divIcon }).addTo(featureLayer);
 
-    const featureData = { id: featureId, category: CATEGORIES.BUILDING, type: tool, bldgNo: bNo, houseCount: hC, coordinates: [latlng.lat, latlng.lng] };
+    const featureData = { id: featureId, category: CATEGORIES.BUILDING, type: tool, bldgNo: bNo, houseCount: hC, scale: scale, coordinates: [latlng.lat, latlng.lng] };
     
     bindFeatureEvents(marker, featureData);
     saveState(featureData);
@@ -190,10 +197,11 @@ function placeLandmark(latlng, tool) {
     baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
     
     const label = `[${baseName}]`;
-    const divIcon = generateLandmarkIcon(label);
+    const scale = 1.0;
+    const divIcon = generateLandmarkIcon(tool, label, scale);
     
     const marker = L.marker(latlng, { icon: divIcon }).addTo(featureLayer);
-    const featureData = { id: featureId, category: CATEGORIES.LANDMARK, type: tool, label: label, coordinates: [latlng.lat, latlng.lng] };
+    const featureData = { id: featureId, category: CATEGORIES.LANDMARK, type: tool, label: label, scale: scale, coordinates: [latlng.lat, latlng.lng] };
     
     bindFeatureEvents(marker, featureData);
     saveState(featureData);
@@ -212,10 +220,8 @@ function startLine(latlng) {
 
 function updateLine(latlng) {
     if (!isDrawingLine || !activePolylineGroup) return;
-    
     if (state.ui.currentTool === TOOLS.LINE_STRAIGHT) activeCoordinates[1] = latlng; 
     else activeCoordinates.push(latlng); 
-    
     activePolylineGroup.eachLayer(layer => layer.setLatLngs(activeCoordinates));
 }
 
@@ -239,9 +245,6 @@ function finishLine() {
     activeCoordinates = [];
 }
 
-/**
- * Builds the geometric layers of a line, including the FAT HIT-BOX
- */
 function renderLineGraphics(group, coords, tool) {
     if (tool === TOOLS.LINE_MAINROAD) {
         L.polyline(coords, { color: '#000', weight: 8 }).addTo(group);
@@ -250,7 +253,6 @@ function renderLineGraphics(group, coords, tool) {
         L.polyline(coords, { color: '#000', weight: 5 }).addTo(group);
         L.polyline(coords, { color: '#fff', weight: 2 }).addTo(group);
     } else if (tool === TOOLS.LINE_PATHWAY) {
-        // ELITE FIX: True parallel dashed lines for pathways
         L.polyline(coords, { color: '#000', weight: 6, dashArray: '5, 5' }).addTo(group);
         L.polyline(coords, { color: '#fff', weight: 4, dashArray: '5, 5' }).addTo(group);
     } else if (tool === TOOLS.LINE_UNMETALLED) {
@@ -261,8 +263,7 @@ function renderLineGraphics(group, coords, tool) {
     } else {
         L.polyline(coords, { color: '#000', weight: 3, smoothFactor: 1.0 }).addTo(group);
     }
-
-    // ELITE FIX: Opacity 0.01 makes the hit-box detectable by Android touch sensors
+    // Touch Hit-Box
     L.polyline(coords, { color: 'transparent', weight: 30, opacity: 0.01 }).addTo(group);
 }
 
@@ -271,72 +272,103 @@ function renderLineGraphics(group, coords, tool) {
 // ==========================================
 function handleFeatureTap(featureData, layer) {
     if (state.ui.currentCategory === CATEGORIES.ERASER) {
-        if (confirm(`Erase this ${featureData.category}?`)) {
+        if (confirm(`Eradicate this ${featureData.category}?`)) {
             featureLayer.removeLayer(layer);
-            state.features = state.features.filter(f => f.id !== featureData.id);
+            const activeProject = getActiveProject();
+            activeProject.features = activeProject.features.filter(f => f.id !== featureData.id);
             saveState(); 
         }
         return;
     }
 
-    if (state.ui.currentCategory === CATEGORIES.HAND && featureData.category === CATEGORIES.BUILDING) {
+    if (state.ui.currentCategory === CATEGORIES.HAND && (featureData.category === CATEGORIES.BUILDING || featureData.category === CATEGORIES.LANDMARK)) {
         activeInspectorFeatureId = featureData.id;
         activeInspectorMarker = layer;
         
         const panel = document.getElementById('inspector-panel');
-        document.getElementById('inspect-ref-no').value = featureData.bldgNo;
-        document.getElementById('inspect-sub-count').value = featureData.houseCount;
+        const overlay = document.getElementById('ui-overlay');
+
+        if (featureData.category === CATEGORIES.BUILDING) {
+            document.getElementById('inspect-ref-no').value = featureData.bldgNo;
+            document.getElementById('inspect-sub-count').value = featureData.scale || featureData.houseCount || 1;
+        } else {
+            document.getElementById('inspect-ref-no').value = featureData.label.replace(/\[|\]/g, '');
+            document.getElementById('inspect-sub-count').value = featureData.scale || 1;
+        }
+
+        overlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
+        overlay.classList.add('opacity-100', 'z-[190]');
         panel.classList.remove('hidden');
+        
+        setTimeout(() => panel.classList.remove('scale-95', 'opacity-0'), 10);
     }
 }
 
 function initInspectorUI() {
-    const panel = document.getElementById('inspector-panel');
-
     document.getElementById('btn-save-feature').addEventListener('click', () => {
-        const feature = state.features.find(f => f.id === activeInspectorFeatureId);
+        const activeProject = getActiveProject();
+        const feature = activeProject.features.find(f => f.id === activeInspectorFeatureId);
+        
         if (feature) {
-            feature.bldgNo = document.getElementById('inspect-ref-no').value;
-            feature.houseCount = document.getElementById('inspect-sub-count').value;
+            const refVal = document.getElementById('inspect-ref-no').value;
+            const subVal = document.getElementById('inspect-sub-count').value;
+            const parsedSubVal = parseFloat(subVal);
+
+            if (feature.category === CATEGORIES.BUILDING) {
+                feature.bldgNo = refVal;
+                // Scale Engine: If decimal is typed, it's a scale adjustment.
+                if (subVal.includes('.') || parsedSubVal < 5) {
+                    feature.scale = parsedSubVal;
+                } else {
+                    feature.houseCount = subVal;
+                    feature.scale = 1;
+                }
+                activeInspectorMarker.setIcon(generateBuildingIcon(feature.type, feature.bldgNo, feature.houseCount, feature.scale));
+            } else if (feature.category === CATEGORIES.LANDMARK) {
+                feature.label = `[${refVal}]`;
+                feature.scale = parsedSubVal || 1;
+                activeInspectorMarker.setIcon(generateLandmarkIcon(feature.type, feature.label, feature.scale));
+            }
             
-            activeInspectorMarker.setIcon(generateBuildingIcon(feature.type, feature.bldgNo, feature.houseCount));
             scaleDraftSymbols(); 
             saveState();
         }
-        panel.classList.add('hidden');
+        document.getElementById('btn-close-inspector').click();
     });
 
     document.getElementById('btn-delete-feature').addEventListener('click', () => {
-        if(confirm("Delete this building?")) {
-            state.features = state.features.filter(f => f.id !== activeInspectorFeatureId);
+        if(confirm("Delete this feature?")) {
+            const activeProject = getActiveProject();
+            activeProject.features = activeProject.features.filter(f => f.id !== activeInspectorFeatureId);
             featureLayer.removeLayer(activeInspectorMarker);
             saveState();
-            panel.classList.add('hidden');
+            document.getElementById('btn-close-inspector').click();
         }
     });
 }
 
 // ==========================================
-// 6. UTILITIES (Anti-Fly Math & Undo Engine)
+// 6. UTILITIES & DATA ROUTING
 // ==========================================
 function scaleDraftSymbols() {
     const currentZoom = map.getZoom();
     const baseZoom = 18; 
-    let scale = Math.pow(1.5, currentZoom - baseZoom);
-    // ELITE FIX: Reduced max scale from 3 to 2 so symbols stay reasonably sized
-    if (scale > 2) scale = 2; 
-    if (scale < 0.2) scale = 0.2;
+    let mapScale = Math.pow(1.5, currentZoom - baseZoom);
+    if (mapScale > 2) mapScale = 2; 
+    if (mapScale < 0.2) mapScale = 0.2;
     
     document.querySelectorAll('.marker-scaler').forEach(el => {
-        el.style.transform = `scale(${scale})`;
+        const customScale = parseFloat(el.getAttribute('data-scale')) || 1;
+        el.style.transform = `scale(${mapScale * customScale})`;
     });
 }
 
 function saveState(newFeature = null) {
+    const activeProject = getActiveProject();
     if (newFeature) {
-        state.features.push(newFeature);
-        state.redoStack = []; 
-        state.undoStack.push(JSON.parse(JSON.stringify(state.features)));
+        activeProject.features.push(newFeature);
+        activeProject.redoStack = []; 
+        activeProject.undoStack.push(JSON.parse(JSON.stringify(activeProject.features)));
     }
     saveDraftLocally();
 }
@@ -344,15 +376,16 @@ function saveState(newFeature = null) {
 export function redrawAllFeatures() {
     featureLayer.clearLayers();
     let highestBldgNo = 0;
+    const activeProject = getActiveProject();
 
-    state.features.forEach(f => {
+    activeProject.features.forEach(f => {
         if (f.category === CATEGORIES.BUILDING) {
             if (parseInt(f.bldgNo) > highestBldgNo) highestBldgNo = parseInt(f.bldgNo);
-            const marker = L.marker(f.coordinates, { icon: generateBuildingIcon(f.type, f.bldgNo, f.houseCount) }).addTo(featureLayer);
+            const marker = L.marker(f.coordinates, { icon: generateBuildingIcon(f.type, f.bldgNo, f.houseCount, f.scale) }).addTo(featureLayer);
             bindFeatureEvents(marker, f);
 
         } else if (f.category === CATEGORIES.LANDMARK) {
-            const marker = L.marker(f.coordinates, { icon: generateLandmarkIcon(f.label) }).addTo(featureLayer);
+            const marker = L.marker(f.coordinates, { icon: generateLandmarkIcon(f.type, f.label, f.scale) }).addTo(featureLayer);
             bindFeatureEvents(marker, f);
             
         } else if (f.category === CATEGORIES.LINE) {
