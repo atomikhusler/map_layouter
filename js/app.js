@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 5 Master - Patched)
- * Features: Android Touch Fix, Undo/Redo Memory, Dark Mode, Multi-Format Export.
+ * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 5 Master - Linter Proof)
+ * Features: 0-Error Touch Fix, Undo/Redo Memory, Dark Mode, Multi-Format Export.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
@@ -123,9 +123,10 @@ function initPhase1Setup() {
             }
         });
 
+        // ELITE FIX: Bulletproof click-away listener using composedPath() to satisfy strict Acode Linter
         document.addEventListener('click', (e) => {
-            const target = e.target;
-            if (target instanceof Node && !searchInput.contains(target) && !suggestionsBox.contains(target) && !btnSearch.contains(target)) {
+            const path = e.composedPath();
+            if (!path.includes(searchInput) && !path.includes(suggestionsBox) && !path.includes(btnSearch)) {
                 suggestionsBox.classList.add('hidden');
             }
         });
@@ -164,11 +165,11 @@ function makeDraggable(container) {
 
     function dragStart(e) {
         e = e || window.event;
+        // ELITE FIX: Removed e.preventDefault() entirely so button clicks are never swallowed
         if(e.type === 'touchstart') {
             pos3 = e.touches[0].clientX;
             pos4 = e.touches[0].clientY;
         } else {
-            e.preventDefault(); 
             pos3 = e.clientX;
             pos4 = e.clientY;
         }

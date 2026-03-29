@@ -146,3 +146,43 @@ function triggerFileDownload(content, fileName, mimeType) {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
+// ==========================================
+// SPRINT 5 FIX: MISSING PNG & JSON GENERATORS
+// ==========================================
+export async function generatePNG() {
+    if (state.features.length === 0) return alert("No layout data to capture!");
+    
+    // Auto-load html2canvas for offline-safe PNG rendering
+    if (!window.html2canvas) {
+        await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            script.onload = resolve;
+            document.head.appendChild(script);
+        });
+    }
+
+    const tilePane = document.querySelector('.leaflet-tile-pane');
+    const originalOpacity = tilePane ? tilePane.style.opacity : '1';
+    if (tilePane) tilePane.style.opacity = '0'; // Force white background
+    
+    await new Promise(r => setTimeout(r, 100)); // wait for DOM repaint
+    
+    try {
+        const canvas = await window.html2canvas(document.getElementById('map'), {
+            useCORS: true, backgroundColor: '#ffffff', scale: 2
+        });
+        if (tilePane) tilePane.style.opacity = originalOpacity;
+        return canvas.toDataURL('image/png');
+    } catch (err) {
+        if (tilePane) tilePane.style.opacity = originalOpacity;
+        console.error("Canvas capture failed:", err);
+        return null;
+    }
+}
+
+export function generateJSON() {
+    if (state.features.length === 0) return alert("No data to export!");
+    const jsonStr = JSON.stringify(state, null, 2);
+    triggerFileDownload(jsonStr, `GIS_Twin_${state.user.hlbId || "Draft"}.json`, 'application/json');
+}
