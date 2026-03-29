@@ -6,7 +6,7 @@
     <title>Map Layout Drafter</title>
     
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1e40af">
+    <meta name="theme-color" content="#1e3a8a">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -14,8 +14,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <link rel="stylesheet" href="css/style.css">
+    
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
 </head>
-<body class="bg-gray-100 overflow-hidden select-none text-gray-800">
+<body class="bg-gray-100 dark:bg-gray-900 overflow-hidden select-none text-gray-800 dark:text-gray-100 transition-colors duration-300">
 
     <div id="app" class="relative h-screen w-screen flex flex-col">
 
@@ -23,92 +27,101 @@
             <div id="map" class="absolute inset-0"></div>
         </main>
 
-        <div id="ui-layer" class="absolute inset-0 z-50 pointer-events-none flex flex-col hidden">
+        <header class="absolute top-0 w-full h-14 bg-blue-900 dark:bg-gray-950 text-white flex justify-between items-center px-3 sm:px-4 shadow-md pointer-events-auto z-[80] transition-colors">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button id="btn-menu" class="p-1.5 sm:p-2 bg-blue-800 dark:bg-gray-800 rounded active:bg-blue-700 text-lg sm:text-xl leading-none shadow-inner">☰</button>
+                <span id="display-area-id" class="font-bold text-xs sm:text-sm tracking-wide truncate max-w-[100px] sm:max-w-[200px]">Area: NOT SET</span>
+            </div>
             
-            <header class="h-14 bg-blue-900 text-white flex justify-between items-center px-4 shadow-md pointer-events-auto shrink-0">
-                <div class="flex items-center gap-2 sm:gap-3">
-                    <button id="btn-menu" class="p-2 bg-blue-800 rounded active:bg-blue-700 text-xl leading-none">☰</button>
-                    <span id="display-area-id" class="font-bold text-xs sm:text-sm tracking-wide truncate max-w-[120px] sm:max-w-[200px]">Area: NOT SET</span>
-                </div>
-                <div class="flex flex-col items-center justify-center hidden sm:flex">
-                    <span class="text-[10px] font-bold text-gray-300">NORTH</span>
-                    <span class="text-sm leading-none">▲</span>
-                </div>
-                <div class="flex items-center gap-2 sm:gap-3">
-                    <div id="btn-toggle-gps" class="flex items-center gap-1 bg-blue-950 px-2 py-1.5 rounded border border-blue-800 active:bg-blue-800 transition-colors cursor-pointer">
-                        <div id="gps-status" class="w-3 h-3 rounded-full bg-gray-400"></div>
-                        <span id="gps-accuracy-text" class="text-[10px] font-mono font-bold ml-1 text-gray-400">GPS Off</span>
+            <div id="btn-toggle-gps" class="flex items-center gap-1.5 bg-blue-950 dark:bg-gray-900 px-2 sm:px-3 py-1.5 rounded border border-blue-800 dark:border-gray-700 active:bg-blue-800 transition-colors cursor-pointer shadow-inner">
+                <div id="gps-status" class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-gray-400"></div>
+                <span id="gps-accuracy-text" class="text-[9px] sm:text-[10px] font-mono font-bold text-gray-400">GPS Off</span>
+            </div>
+        </header>
+
+        <div id="setup-layer" class="absolute inset-0 top-14 z-[70] pointer-events-none flex flex-col items-center justify-center">
+            
+            <div id="setup-step-a" class="bg-white/95 dark:bg-gray-800/95 backdrop-blur p-5 sm:p-6 rounded-3xl shadow-2xl w-[95%] max-w-[360px] text-center border border-gray-100 dark:border-gray-700 pointer-events-auto transition-colors">
+                <h2 class="text-xl sm:text-2xl font-black text-gray-800 dark:text-white mb-1">Drafting Setup</h2>
+                <p class="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium">Drag map freely. Enter details to begin.</p>
+                
+                <div class="space-y-3 sm:space-y-4 text-left">
+                    <div>
+                        <label class="block text-[9px] sm:text-[10px] uppercase tracking-wider font-bold text-gray-500 dark:text-gray-400 ml-1">Drafter Name / ID</label>
+                        <input type="text" id="setup-name" class="w-full mt-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 sm:p-3 text-sm focus:bg-white dark:focus:bg-gray-800 focus:border-blue-500 outline-none text-gray-800 dark:text-gray-100 transition-colors">
                     </div>
-                    <button id="btn-export" class="px-3 py-1.5 bg-green-600 rounded text-xs font-bold active:bg-green-500 shadow">EXPORT</button>
-                </div>
-            </header>
-
-            <div class="absolute top-16 left-1/2 -translate-x-1/2 w-[90%] sm:w-[400px] glass-panel p-2 rounded-full flex items-center gap-3 pointer-events-auto shadow-sm z-50">
-                <span class="text-[10px] font-bold text-gray-700 ml-2">MAP</span>
-                <input type="range" id="smokiness-slider" min="0" max="100" value="0" class="horizontal-slider flex-grow">
-                <span class="text-[10px] font-bold text-gray-700">PAPER</span>
-                <button id="btn-refresh" class="p-1.5 bg-black/5 rounded-full hover:bg-black/10 active:rotate-180 transition-transform">🔄</button>
-            </div>
-
-            <div id="branding-pill" class="absolute bottom-6 left-4 sm:left-6 pointer-events-auto flex items-center gap-3 glass-panel p-1.5 pl-2 pr-4 rounded-full shadow-lg z-50">
-                <img src="logo.png" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><rect width=\'32\' height=\'32\' fill=\'%233b82f6\'/></svg>'" class="w-8 h-8 rounded-full object-cover border border-white/50 shadow-sm bg-white" alt="Logo">
-                <div class="flex flex-col">
-                    <span class="text-[8px] uppercase tracking-widest text-gray-500 font-bold leading-none">Developed by</span>
-                    <span class="text-xs font-bold text-gray-800">Sahil Kumar Rout</span>
-                </div>
-            </div>
-            
-            <div id="settings-menu" class="absolute top-0 left-0 bottom-0 w-[85%] sm:w-[350px] bg-white shadow-2xl z-[100] transform -translate-x-full transition-transform duration-300 pointer-events-auto flex flex-col">
-                <div class="bg-blue-900 text-white p-4 flex justify-between items-center shrink-0">
-                    <h2 class="font-bold text-lg">Advanced Settings</h2>
-                    <button id="btn-close-menu" class="text-white text-3xl leading-none px-2 active:text-gray-300">&times;</button>
+                    <div>
+                        <label class="block text-[9px] sm:text-[10px] uppercase tracking-wider font-bold text-gray-500 dark:text-gray-400 ml-1">Area / Block ID</label>
+                        <input type="text" id="setup-area" class="w-full mt-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 sm:p-3 text-sm focus:bg-white dark:focus:bg-gray-800 focus:border-blue-500 outline-none text-gray-800 dark:text-gray-100 transition-colors">
+                    </div>
                 </div>
                 
-                <div class="p-4 flex-grow overflow-y-auto space-y-6">
-                    <div>
-                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Base Map Layer</h3>
-                        <div class="grid grid-cols-3 gap-2">
-                            <button class="map-layer-btn bg-blue-50 border-2 border-blue-500 text-blue-700 font-bold text-xs py-2 rounded-lg" data-layer="satellite">Satellite</button>
-                            <button class="map-layer-btn bg-gray-50 border-2 border-transparent text-gray-600 font-bold text-xs py-2 rounded-lg" data-layer="terrain">Terrain</button>
-                            <button class="map-layer-btn bg-gray-50 border-2 border-transparent text-gray-600 font-bold text-xs py-2 rounded-lg" data-layer="dark">Dark</button>
-                        </div>
-                    </div>
+                <button id="btn-to-step-b" disabled class="w-full mt-6 sm:mt-8 py-3 bg-blue-600 text-white font-bold rounded-xl active:bg-blue-700 disabled:opacity-50 transition-all shadow-lg text-sm sm:text-base">
+                    Next: Find Area
+                </button>
+            </div>
 
-                    <div>
-                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Live Statistics</h3>
-                        <div class="bg-gray-50 rounded-lg p-3 border border-gray-200 text-sm">
-                            <p class="mb-1">🏠 Buildings: <span id="stat-bldg" class="font-bold text-blue-600">0</span></p>
-                            <p class="mb-1">⭐ Landmarks: <span id="stat-lm" class="font-bold text-blue-600">0</span></p>
-                            <p>✏️ Lines/Roads: <span id="stat-lines" class="font-bold text-blue-600">0</span></p>
-                        </div>
+            <div id="setup-step-b" class="hidden absolute inset-0 flex flex-col items-center">
+                
+                <div class="mt-4 w-[95%] max-w-[450px] relative pointer-events-auto">
+                    <div class="bg-white dark:bg-gray-800 p-1.5 sm:p-2 rounded-2xl shadow-xl flex gap-2 border border-gray-100 dark:border-gray-700 transition-colors">
+                        <input type="text" id="map-search" class="flex-grow p-2 pl-3 text-xs sm:text-sm outline-none bg-transparent text-gray-800 dark:text-gray-100" placeholder="Search Place, Village...">
+                        <button id="btn-search" class="bg-gray-900 dark:bg-gray-700 text-white px-4 sm:px-5 py-2 rounded-xl text-xs sm:text-sm font-bold active:scale-95 transition-transform">Search</button>
                     </div>
-
-                    <div>
-                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">System Actions</h3>
-                        <button id="btn-force-redraw" class="w-full text-left p-3 bg-blue-50 text-blue-700 rounded-lg text-sm font-bold active:bg-blue-100 mb-2 border border-blue-200">
-                            🔄 Force Map Sync (Redraw)
-                        </button>
-                        <button id="btn-emergency-reset" class="w-full text-left p-3 bg-red-50 text-red-700 rounded-lg text-sm font-bold active:bg-red-100 border border-red-200">
-                            ⚠️ Emergency Reset (Wipe Data)
-                        </button>
+                    <ul id="search-suggestions" class="absolute top-full left-0 w-full bg-white dark:bg-gray-800 rounded-xl shadow-2xl mt-2 hidden z-[100] max-h-48 overflow-y-auto border border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700"></ul>
+                </div>
+                
+                <div class="flex-grow flex items-center justify-center pointer-events-none">
+                    <div class="relative w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center">
+                        <div class="absolute w-full h-[2px] bg-blue-600/80"></div>
+                        <div class="absolute h-full w-[2px] bg-blue-600/80"></div>
+                        <div class="w-2 h-2 sm:w-3 sm:h-3 border-2 border-white bg-blue-600 rounded-full z-10 shadow-md"></div>
                     </div>
                 </div>
+                
+                <div class="w-full p-4 sm:p-6 pb-6 sm:pb-10 flex flex-col items-center justify-center pointer-events-auto bg-gradient-to-t from-black/50 to-transparent">
+                    <p class="text-white text-[10px] sm:text-xs font-bold mb-2 sm:mb-3 drop-shadow-md text-center">Drag the map to position the crosshair precisely over the target.</p>
+                    <button id="btn-lock-area" class="w-[95%] max-w-[400px] py-3.5 sm:py-4 bg-green-500 text-white text-base sm:text-lg font-black tracking-wide rounded-2xl shadow-[0_10px_20px_rgba(34,197,94,0.4)] active:scale-95 transition-transform border border-green-400">
+                        VALIDATE &amp; LOCK
+                    </button>
+                </div>
             </div>
-            <div id="menu-overlay" class="absolute inset-0 bg-black/50 z-[90] hidden pointer-events-auto transition-opacity"></div>
+        </div>
 
-            <div id="fab-container" class="absolute bottom-6 right-4 sm:right-6 flex flex-col items-end gap-3 pointer-events-auto z-[60]">
-                <div id="fab-submenu" class="hidden flex-col gap-2 glass-panel p-2 rounded-xl shadow-xl mb-2"></div>
+        <div id="ui-layer" class="absolute inset-0 top-14 z-[60] pointer-events-none flex flex-col hidden">
+            
+            <div class="absolute top-4 left-1/2 -translate-x-1/2 w-[95%] max-w-[450px] glass-panel dark:bg-gray-800/85 p-1 sm:p-1.5 rounded-full flex items-center gap-1.5 sm:gap-2 pointer-events-auto shadow-sm z-50 transition-colors">
+                <button id="btn-undo" class="p-1 sm:p-1.5 bg-black/5 dark:bg-white/10 rounded-full hover:bg-black/10 active:scale-90 transition-transform text-sm" title="Undo">↩️</button>
+                <button id="btn-redo" class="p-1 sm:p-1.5 bg-black/5 dark:bg-white/10 rounded-full hover:bg-black/10 active:scale-90 transition-transform text-sm" title="Redo">↪️</button>
+                
+                <span class="text-[8px] sm:text-[9px] font-black text-gray-600 dark:text-gray-300 ml-1">MAP</span>
+                <input type="range" id="smokiness-slider" min="0" max="100" value="0" class="horizontal-slider flex-grow h-[4px]">
+                <span class="text-[8px] sm:text-[9px] font-black text-gray-600 dark:text-gray-300">PAPER</span>
+                
+                <button id="btn-refresh" class="p-1 sm:p-1.5 bg-black/5 dark:bg-white/10 rounded-full hover:bg-black/10 active:rotate-180 transition-transform text-sm mr-0.5" title="Refresh Rendering">🔄</button>
+            </div>
 
-                <div id="fab-categories" class="hidden flex-col gap-3 mb-2 items-center">
-                    <button class="fab-cat-btn bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 active:bg-gray-100 text-xl" data-cat="eraser">🧽</button>
-                    <button class="fab-cat-btn bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 active:bg-gray-100 text-xl" data-cat="landmark">⭐</button>
-                    <button class="fab-cat-btn bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 active:bg-gray-100 text-xl" data-cat="line">✏️</button>
-                    <button class="fab-cat-btn bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 active:bg-gray-100 text-xl" data-cat="building">🏠</button>
-                    <button class="fab-cat-btn bg-white text-gray-700 p-3 rounded-full shadow-lg border border-gray-200 active:bg-gray-100 text-xl" data-cat="hand">🖐️</button>
+            <div id="branding-pill" class="absolute bottom-4 sm:bottom-6 left-3 sm:left-4 pointer-events-auto flex items-center gap-2 glass-panel dark:bg-gray-800/85 p-1 pr-3 rounded-full shadow-lg z-50 transition-colors">
+                <img src="logo.png" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\'><rect width=\'24\' height=\'24\' fill=\'%233b82f6\'/></svg>'" class="w-6 h-6 rounded-full object-cover border border-white/50 dark:border-gray-600 shadow-sm bg-white" alt="Logo">
+                <div class="flex flex-col justify-center">
+                    <span class="text-[7px] uppercase tracking-widest text-gray-500 dark:text-gray-400 font-bold leading-none mb-0.5">Developed by</span>
+                    <span class="text-[10px] font-bold text-gray-800 dark:text-gray-200 leading-none">Sahil Kumar Rout</span>
+                </div>
+            </div>
+
+            <div id="fab-container" class="absolute bottom-6 right-3 sm:right-6 flex flex-col items-end gap-2 sm:gap-3 pointer-events-auto z-[60]">
+                <div id="fab-submenu" class="hidden flex-col gap-1.5 glass-panel dark:bg-gray-800/90 p-1.5 sm:p-2 rounded-xl shadow-xl mb-1 sm:mb-2 transition-colors"></div>
+
+                <div id="fab-categories" class="hidden flex-col gap-2 sm:gap-3 mb-1 sm:mb-2 items-center">
+                    <button class="fab-cat-btn bg-white dark:bg-gray-700 text-gray-700 dark:text-white p-2.5 sm:p-3 rounded-full shadow-lg border border-gray-200 dark:border-gray-600 active:bg-gray-100 text-lg sm:text-xl transition-colors" data-cat="eraser">🧽</button>
+                    <button class="fab-cat-btn bg-white dark:bg-gray-700 text-gray-700 dark:text-white p-2.5 sm:p-3 rounded-full shadow-lg border border-gray-200 dark:border-gray-600 active:bg-gray-100 text-lg sm:text-xl transition-colors" data-cat="landmark">⭐</button>
+                    <button class="fab-cat-btn bg-white dark:bg-gray-700 text-gray-700 dark:text-white p-2.5 sm:p-3 rounded-full shadow-lg border border-gray-200 dark:border-gray-600 active:bg-gray-100 text-lg sm:text-xl transition-colors" data-cat="line">✏️</button>
+                    <button class="fab-cat-btn bg-white dark:bg-gray-700 text-gray-700 dark:text-white p-2.5 sm:p-3 rounded-full shadow-lg border border-gray-200 dark:border-gray-600 active:bg-gray-100 text-lg sm:text-xl transition-colors" data-cat="building">🏠</button>
+                    <button class="fab-cat-btn bg-white dark:bg-gray-700 text-gray-700 dark:text-white p-2.5 sm:p-3 rounded-full shadow-lg border border-gray-200 dark:border-gray-600 active:bg-gray-100 text-lg sm:text-xl transition-colors" data-cat="hand">🖐️</button>
                 </div>
 
                 <div class="relative flex items-center justify-center">
-                    <button id="fab-main" class="w-14 h-14 sm:w-16 sm:h-16 bg-blue-600 text-white rounded-full shadow-[0_8px_16px_rgba(37,99,235,0.4)] flex items-center justify-center text-2xl sm:text-3xl active:bg-blue-700 transition-transform active:scale-95 cursor-move border-2 border-white/20">
+                    <button id="fab-main" class="w-12 h-12 sm:w-14 sm:h-14 bg-blue-600 text-white rounded-full shadow-[0_6px_12px_rgba(37,99,235,0.4)] flex items-center justify-center text-xl sm:text-2xl active:bg-blue-700 transition-transform active:scale-95 cursor-move border-2 border-white/20">
                         🖐️
                     </button>
                 </div>
@@ -116,69 +129,67 @@
             
         </div> 
 
-        <div id="setup-layer" class="absolute inset-0 z-[100] pointer-events-auto flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            
-            <div id="setup-step-a" class="bg-white/95 backdrop-blur p-6 rounded-3xl shadow-2xl w-[90%] max-w-sm text-center">
-                <h2 class="text-2xl font-black text-gray-800 mb-1">Drafting Setup</h2>
-                <p class="text-xs text-gray-500 mb-6 font-medium">Enter details to initiate your secure session.</p>
-                
-                <div class="space-y-4 text-left">
-                    <div>
-                        <label class="block text-[10px] uppercase tracking-wider font-bold text-gray-500 ml-1">Drafter Name / ID</label>
-                        <input type="text" id="setup-name" class="w-full mt-1 bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:bg-white focus:border-blue-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-[10px] uppercase tracking-wider font-bold text-gray-500 ml-1">Area / Block ID</label>
-                        <input type="text" id="setup-area" class="w-full mt-1 bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm focus:bg-white focus:border-blue-500 outline-none">
-                    </div>
-                </div>
-                
-                <button id="btn-to-step-b" disabled class="w-full mt-8 py-3.5 bg-blue-600 text-white font-bold rounded-xl active:bg-blue-700 disabled:opacity-50 transition-all shadow-lg">
-                    Next: Find Area
-                </button>
+        <div id="settings-menu" class="absolute top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-white dark:bg-gray-900 shadow-2xl z-[100] transform -translate-x-full transition-transform duration-300 pointer-events-auto flex flex-col">
+            <div class="bg-blue-900 dark:bg-gray-950 text-white p-3 sm:p-4 flex justify-between items-center shrink-0">
+                <h2 class="font-bold text-base sm:text-lg">System Dashboard</h2>
+                <button id="btn-close-menu" class="text-white text-2xl sm:text-3xl leading-none px-2 active:text-gray-300">&times;</button>
             </div>
+            
+            <div class="p-4 flex-grow overflow-y-auto space-y-5 hide-scrollbar">
+                
+                <div class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors">
+                    <span class="text-xs font-bold text-gray-700 dark:text-gray-200">Dark Theme UI</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggle-dark-mode" class="sr-only peer">
+                        <div class="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                </div>
 
-            <div id="setup-step-b" class="hidden absolute inset-0 flex flex-col items-center">
-                
-                <div class="mt-8 w-[90%] sm:w-[500px] relative pointer-events-auto">
-                    <div class="bg-white p-2 rounded-2xl shadow-xl flex gap-2 border border-gray-100">
-                        <input type="text" id="map-search" class="flex-grow p-2 pl-3 text-sm outline-none" placeholder="Search Place, Village, or Lat,Lng...">
-                        <button id="btn-search" class="bg-gray-900 text-white px-5 py-2 rounded-xl text-sm font-bold active:scale-95 transition-transform">Search</button>
-                    </div>
-                    <ul id="search-suggestions" class="absolute top-full left-0 w-full bg-white rounded-xl shadow-2xl mt-2 hidden z-[100] max-h-60 overflow-y-auto border border-gray-100 divide-y divide-gray-100"></ul>
-                </div>
-                
-                <div class="flex-grow flex items-center justify-center pointer-events-none">
-                    <div class="relative w-16 h-16 flex items-center justify-center">
-                        <div class="absolute w-full h-[2px] bg-blue-600/80"></div>
-                        <div class="absolute h-full w-[2px] bg-blue-600/80"></div>
-                        <div class="w-3 h-3 border-2 border-white bg-blue-600 rounded-full z-10 shadow-md"></div>
+                <div>
+                    <h3 class="text-[10px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Export Data</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="export-pdf" class="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 font-bold text-xs py-2.5 rounded-lg active:bg-green-100 transition-colors">PDF Report</button>
+                        <button id="export-png" class="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 font-bold text-xs py-2.5 rounded-lg active:bg-blue-100 transition-colors">Map PNG</button>
+                        <button id="export-csv" class="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-400 font-bold text-xs py-2.5 rounded-lg active:bg-purple-100 transition-colors">Data CSV</button>
+                        <button id="export-json" class="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-400 font-bold text-xs py-2.5 rounded-lg active:bg-orange-100 transition-colors">GIS JSON</button>
                     </div>
                 </div>
-                
-                <div class="w-full p-6 pb-10 flex flex-col items-center justify-center pointer-events-auto bg-gradient-to-t from-black/60 to-transparent">
-                    <p class="text-white text-xs font-bold mb-3 drop-shadow-md text-center">Drag the map to position the crosshair perfectly over your target area.</p>
-                    <button id="btn-lock-area" class="w-[90%] sm:w-[400px] py-4 bg-green-500 text-white text-lg font-black tracking-wide rounded-2xl shadow-[0_10px_20px_rgba(34,197,94,0.4)] active:scale-95 transition-transform border border-green-400">
-                        VALIDATE &amp; LOCK AREA
+
+                <div>
+                    <h3 class="text-[10px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Live Statistics</h3>
+                    <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 text-xs sm:text-sm transition-colors">
+                        <p class="mb-1 dark:text-gray-300">🏠 Buildings: <span id="stat-bldg" class="font-bold text-blue-600 dark:text-blue-400">0</span></p>
+                        <p class="mb-1 dark:text-gray-300">⭐ Landmarks: <span id="stat-lm" class="font-bold text-blue-600 dark:text-blue-400">0</span></p>
+                        <p class="dark:text-gray-300">✏️ Lines/Roads: <span id="stat-lines" class="font-bold text-blue-600 dark:text-blue-400">0</span></p>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-[10px] sm:text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">System Actions</h3>
+                    <button id="btn-force-redraw" class="w-full text-left p-2.5 sm:p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-lg text-xs sm:text-sm font-bold active:bg-blue-100 mb-2 border border-blue-200 dark:border-blue-800 transition-colors">
+                        🔄 Deep Sync Render
+                    </button>
+                    <button id="btn-emergency-reset" class="w-full text-left p-2.5 sm:p-3 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-xs sm:text-sm font-bold active:bg-red-100 border border-red-200 dark:border-red-800 transition-colors">
+                        ⚠️ Emergency Data Wipe
                     </button>
                 </div>
             </div>
-
         </div>
+        <div id="menu-overlay" class="absolute inset-0 bg-black/50 z-[90] hidden pointer-events-auto transition-opacity"></div>
 
-        <div id="inspector-panel" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl border border-gray-200 z-[200] p-5 w-[90%] sm:w-[320px] pointer-events-auto">
-            <h3 class="font-bold text-gray-800 mb-4 border-b pb-2">Edit Building Data</h3>
+        <div id="inspector-panel" class="hidden absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 z-[200] p-4 sm:p-5 w-[90%] max-w-[320px] pointer-events-auto transition-colors">
+            <h3 class="font-bold text-gray-800 dark:text-white mb-3 sm:mb-4 border-b dark:border-gray-700 pb-2 text-sm sm:text-base">Edit Feature Data</h3>
             <div class="mb-3">
-                <label class="block text-[10px] uppercase font-bold text-gray-500 ml-1">Building Sl. No.</label>
-                <input type="text" id="inspect-ref-no" class="w-full mt-1 border border-gray-200 rounded-xl p-3 text-sm bg-gray-50 focus:bg-white outline-none">
+                <label class="block text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 ml-1">Building Sl. No. / Name</label>
+                <input type="text" id="inspect-ref-no" class="w-full mt-1 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 sm:p-3 text-xs sm:text-sm bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-white focus:bg-white dark:focus:bg-gray-800 outline-none transition-colors">
             </div>
-            <div class="mb-5">
-                <label class="block text-[10px] uppercase font-bold text-gray-500 ml-1">No. of House(s)</label>
-                <input type="number" id="inspect-sub-count" class="w-full mt-1 border border-gray-200 rounded-xl p-3 text-sm bg-gray-50 focus:bg-white outline-none">
+            <div class="mb-4 sm:mb-5">
+                <label class="block text-[9px] sm:text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 ml-1">No. of House(s)</label>
+                <input type="number" id="inspect-sub-count" class="w-full mt-1 border border-gray-200 dark:border-gray-700 rounded-xl p-2.5 sm:p-3 text-xs sm:text-sm bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-white focus:bg-white dark:focus:bg-gray-800 outline-none transition-colors">
             </div>
-            <div class="flex justify-between gap-3">
-                <button id="btn-delete-feature" class="px-4 py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl text-sm font-bold active:bg-red-100">Delete</button>
-                <button id="btn-save-feature" class="px-4 py-3 bg-blue-600 text-white rounded-xl text-sm font-bold flex-grow active:bg-blue-700 shadow-md">Apply Instantly</button>
+            <div class="flex justify-between gap-2 sm:gap-3">
+                <button id="btn-delete-feature" class="px-3 sm:px-4 py-2.5 sm:py-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800 rounded-xl text-xs sm:text-sm font-bold active:bg-red-100 transition-colors">Delete</button>
+                <button id="btn-save-feature" class="px-3 sm:px-4 py-2.5 sm:py-3 bg-blue-600 text-white rounded-xl text-xs sm:text-sm font-bold flex-grow active:bg-blue-700 shadow-md transition-colors">Apply</button>
             </div>
         </div>
 
