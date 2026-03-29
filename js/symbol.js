@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Drafting Engine (Sprint 1 Master Version)
- * Handles Touch Physics, Dynamic Vector Scaling, Parallel Lines, and Real-Time Editing.
+ * MAP LAYOUT DRAFTER - Drafting Engine (Sprint 3 Master Version)
+ * Fixes "Flying" Coordinate Anchors, adds Real-Time Reactivity, and Parallel Lines.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
@@ -12,7 +12,7 @@ let currentBldgNo = 1;
 
 // Line Drawing State
 let isDrawingLine = false;
-let activePolylineGroup = null; // Upgraded to Group for Parallel Lines
+let activePolylineGroup = null; 
 let activeCoordinates = [];
 
 // Inspector State
@@ -25,11 +25,11 @@ export function initSymbols() {
     setupMapClickRouter();
     initInspectorUI();
     
-    // Smooth dynamic scaling during zooming (not just at the end)
+    // Smooth dynamic scaling bound to map events
     map.on('zoom', scaleDraftSymbols);
     map.on('zoomend', scaleDraftSymbols);
 
-    console.log("[Drafting Engine] V2 Initialized: Reactive Engine Online.");
+    console.log("[Drafting Engine] V3 Initialized: Anti-Fly Anchors & Reactive Engine Online.");
 }
 
 // ==========================================
@@ -97,7 +97,7 @@ function setupMapClickRouter() {
 // 3. FEATURE PLACEMENT & REACTIVE ICONS
 // ==========================================
 
-// Helper: Generates HTML for Buildings so it can be reused by the Inspector for Real-Time Edits
+// Helper: Generates HTML wrapped in .marker-scaler to prevent the "Flying" bug
 function generateBuildingIcon(tool, bldgNo, houseCount) {
     let iconHtml = '';
     const hatchStyle = `background: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px);`;
@@ -111,13 +111,16 @@ function generateBuildingIcon(tool, bldgNo, houseCount) {
     } else if (tool === TOOLS.KUTCHA_NON_RES) {
         iconHtml = `<div class="relative w-0 h-0 border-l-[16px] border-r-[16px] border-b-[28px] border-l-transparent border-r-transparent border-b-black drop-shadow"><div class="absolute top-[2px] -left-[12px] w-[24px] h-[24px]" style="${hatchStyle}"></div><div class="absolute top-[8px] -left-[6px] text-[10px] font-bold bg-white/90 text-black px-[2px] rounded">${bldgNo}</div></div><div class="text-xs font-bold text-black mt-1 text-shadow-white drop-shadow-md">(${houseCount})</div>`;
     }
-    return L.divIcon({ className: 'draft-symbol', html: iconHtml, iconSize: [0,0] });
+
+    // Wrap in the scalar div. Anchor is center of 40x40.
+    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
+    
+    return L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
 }
 
 function placeBuilding(latlng, tool) {
-    // Sprint 1 Fix: Mandatory Prompts on Placement
     const bldgNo = prompt(`Placing Building.\nEnter Building Sl. No.:`, currentBldgNo.toString());
-    if (!bldgNo) return; // Cancel if empty
+    if (!bldgNo) return; 
     
     const houseCount = prompt(`Enter No. of House(s) inside Building #${bldgNo}:`, "1");
     if (!houseCount) return;
@@ -138,13 +141,12 @@ function placeBuilding(latlng, tool) {
     state.features.push(featureData);
     marker.on('click', () => handleFeatureTap(featureData, marker));
     
-    // Auto-increment logic
     const parsedNo = parseInt(bldgNo);
     if (!isNaN(parsedNo) && parsedNo >= currentBldgNo) {
         currentBldgNo = parsedNo + 1;
     }
     
-    scaleDraftSymbols(); // Force scale immediately
+    scaleDraftSymbols(); 
     saveDraftLocally();
 }
 
@@ -155,7 +157,6 @@ function placeLandmark(latlng, tool) {
         if (!input) return;
         label = `[${input.replace(/\[|\]/g, '')}]`; 
     } else {
-        // Automatically prompt for specific names even for standard symbols
         const specificName = prompt(`Name this ${tool.replace('lm_', '')} (Optional):`);
         label = specificName ? `[${specificName}]` : `[${tool.replace('lm_', '')}]`;
     }
@@ -163,7 +164,9 @@ function placeLandmark(latlng, tool) {
     const featureId = `lm_${Date.now()}`;
     const iconHtml = `<div class="font-bold text-sm text-black whitespace-nowrap drop-shadow-md" style="text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;">${label}</div>`;
     
-    const divIcon = L.divIcon({ className: 'draft-symbol', html: iconHtml, iconSize: [0,0] });
+    const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
+    const divIcon = L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
+    
     const marker = L.marker(latlng, { icon: divIcon }).addTo(featureLayer);
 
     const featureData = { id: featureId, category: CATEGORIES.LANDMARK, type: tool, label: label, coordinates: [latlng.lat, latlng.lng] };
@@ -175,7 +178,7 @@ function placeLandmark(latlng, tool) {
 }
 
 // ==========================================
-// 4. PARALLEL LINE ENGINE (The Pencil Engine V2)
+// 4. PARALLEL LINE ENGINE
 // ==========================================
 function startLine(latlng) {
     isDrawingLine = true;
@@ -184,19 +187,17 @@ function startLine(latlng) {
     const tool = state.ui.currentTool;
     activePolylineGroup = L.featureGroup().addTo(featureLayer);
 
-    // Sprint 1 Fix: True Parallel Lines
     if (tool === TOOLS.LINE_METALLED) {
-        L.polyline(activeCoordinates, { color: '#000', weight: 6 }).addTo(activePolylineGroup); // Background
-        L.polyline(activeCoordinates, { color: '#fff', weight: 2 }).addTo(activePolylineGroup); // Inner track
+        L.polyline(activeCoordinates, { color: '#000', weight: 6 }).addTo(activePolylineGroup); 
+        L.polyline(activeCoordinates, { color: '#fff', weight: 2 }).addTo(activePolylineGroup); 
     } else if (tool === TOOLS.LINE_UNMETALLED) {
-        L.polyline(activeCoordinates, { color: '#4b5563', weight: 6 }).addTo(activePolylineGroup); // Background
-        L.polyline(activeCoordinates, { color: '#fff', weight: 2, dashArray: '5, 5' }).addTo(activePolylineGroup); // Inner dashed track
+        L.polyline(activeCoordinates, { color: '#4b5563', weight: 6 }).addTo(activePolylineGroup); 
+        L.polyline(activeCoordinates, { color: '#fff', weight: 2, dashArray: '5, 5' }).addTo(activePolylineGroup); 
     } else if (tool === TOOLS.LINE_PATHWAY) {
         L.polyline(activeCoordinates, { color: '#000', weight: 2, dashArray: '4, 6' }).addTo(activePolylineGroup);
     } else if (tool === TOOLS.LINE_BOUNDARY) {
         L.polyline(activeCoordinates, { color: '#000', weight: 4, dashArray: '15, 10, 5, 10' }).addTo(activePolylineGroup);
     } else {
-        // Straight / Freehand
         L.polyline(activeCoordinates, { color: '#000', weight: 3, smoothFactor: 1.5 }).addTo(activePolylineGroup);
     }
 }
@@ -204,8 +205,6 @@ function startLine(latlng) {
 function updateLine(latlng) {
     if (!isDrawingLine || !activePolylineGroup) return;
     activeCoordinates.push(latlng);
-    
-    // Update all layers in the group (creates the parallel follow effect)
     activePolylineGroup.eachLayer(layer => {
         layer.setLatLngs(activeCoordinates);
     });
@@ -214,7 +213,6 @@ function updateLine(latlng) {
 function finishLine() {
     isDrawingLine = false;
     if (activeCoordinates.length > 1) {
-        // Prompt for road name
         let roadName = prompt("Enter Road/Line Name (Optional):");
         if (!roadName) roadName = state.ui.currentTool.replace('line_', '');
 
@@ -227,7 +225,7 @@ function finishLine() {
         activePolylineGroup.on('click', () => handleFeatureTap(featureData, activePolylineGroup));
         saveDraftLocally();
     } else if (activePolylineGroup) {
-        featureLayer.removeLayer(activePolylineGroup); // Purge ghost tap
+        featureLayer.removeLayer(activePolylineGroup); 
     }
     
     activePolylineGroup = null;
@@ -267,7 +265,7 @@ function initInspectorUI() {
             feature.bldgNo = document.getElementById('inspect-ref-no').value;
             feature.houseCount = document.getElementById('inspect-sub-count').value;
             
-            // Sprint 1 Fix: Real-Time UI Update (No Refresh Needed)
+            // Instantly applies the new HTML wrapper to the existing map marker
             const newIcon = generateBuildingIcon(feature.type, feature.bldgNo, feature.houseCount);
             activeInspectorMarker.setIcon(newIcon);
             scaleDraftSymbols(); 
@@ -288,33 +286,24 @@ function initInspectorUI() {
 }
 
 // ==========================================
-// 6. MAP ENGINE UTILITIES
+// 6. MAP ENGINE UTILITIES (The Anti-Fly Scaler)
 // ==========================================
 
-/**
- * Sprint 1 Fix: Dynamic Geographic Scaling
- * Ensures div icons scale physically when zooming in and out.
- */
 function scaleDraftSymbols() {
     const currentZoom = map.getZoom();
-    const baseZoom = 18; // 1:1 Scale Level
+    const baseZoom = 18; 
     
-    // Mathematical scaling factor
     let scale = Math.pow(1.5, currentZoom - baseZoom);
-    
-    // Hard constraints so it doesn't vanish or cover the earth
     if (scale > 3) scale = 3;
     if (scale < 0.2) scale = 0.2;
     
-    document.querySelectorAll('.draft-symbol').forEach(el => {
+    // Notice we ONLY scale the inner .marker-scaler child!
+    // We leave Leaflet's positioning transform on the parent completely untouched.
+    document.querySelectorAll('.marker-scaler').forEach(el => {
         el.style.transform = `scale(${scale})`;
-        el.style.transformOrigin = 'center center';
     });
 }
 
-/**
- * Rebuilds the map from memory. Upgraded for Parallel Lines.
- */
 export function redrawAllFeatures() {
     featureLayer.clearLayers();
     let highestBldgNo = 0;
@@ -329,13 +318,14 @@ export function redrawAllFeatures() {
 
         } else if (f.category === CATEGORIES.LANDMARK) {
             const iconHtml = `<div class="font-bold text-sm text-black whitespace-nowrap drop-shadow-md" style="text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;">${f.label}</div>`;
-            const divIcon = L.divIcon({ className: 'draft-symbol', html: iconHtml, iconSize: [0,0] });
+            const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
+            const divIcon = L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] });
+            
             const marker = L.marker(f.coordinates, { icon: divIcon }).addTo(featureLayer);
             marker.on('click', () => handleFeatureTap(f, marker));
             
         } else if (f.category === CATEGORIES.LINE) {
             const group = L.featureGroup().addTo(featureLayer);
-            
             if (f.type === TOOLS.LINE_METALLED) {
                 L.polyline(f.coordinates, { color: '#000', weight: 6 }).addTo(group);
                 L.polyline(f.coordinates, { color: '#fff', weight: 2 }).addTo(group);
@@ -349,7 +339,6 @@ export function redrawAllFeatures() {
             } else {
                 L.polyline(f.coordinates, { color: '#000', weight: 3, smoothFactor: 1.5 }).addTo(group);
             }
-            
             group.on('click', () => handleFeatureTap(f, group));
         }
     });

@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 2 Master)
- * Handles Phase splits, Nominatim Search, Draggable Menus, and Core bindings.
+ * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 3 Master)
+ * Features: Humanized Search Helper, Touch-Perfect Draggable UI, Elite Tile Fading, Linter-Safe.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
@@ -23,6 +23,7 @@ console.error = function(...args) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Prevent accidental zooming/scrolling on the UI layer
     document.addEventListener('touchmove', (e) => {
         if (e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { e.preventDefault(); } 
     }, { passive: false });
@@ -44,30 +45,30 @@ document.addEventListener('DOMContentLoaded', () => {
     initFABLogic();
     initUIControls();
     
-    // Sprint 2 Fix: Make Tool Hub Draggable
+    // Sprint 3 Fix: Elite Mobile-Optimized Draggable Engine
     makeDraggable(document.getElementById('fab-container'));
 });
 
 // ==========================================
-// 3. PHASE 1: SPLIT SETUP & SEARCH ENGINE
+// 3. PHASE 1: SPLIT SETUP & HUMANIZED SEARCH
 // ==========================================
 function initPhase1Setup() {
     const btnToStepB = document.getElementById('btn-to-step-b');
-    const btnLock = document.getElementById('btn-lock-area'); // The final confirm button
+    const btnLock = document.getElementById('btn-lock-area');
     const inputName = document.getElementById('setup-name');
     const inputArea = document.getElementById('setup-area');
-    const btnSearch = document.getElementById('btn-search');
     
-    // Fallback if using old HTML (Backward compatibility)
-    const oldLock = document.getElementById('btn-lock-area-old'); 
+    const searchInput = document.getElementById('map-search');
+    const btnSearch = document.getElementById('btn-search');
+    const suggestionsBox = document.getElementById('search-suggestions');
 
+    // Input Validation
     const checkInputs = () => {
-        const btn = btnToStepB || oldLock || btnLock; 
-        if (!btn) return;
+        if (!btnToStepB) return;
         if (inputName && inputName.value.trim() !== "" && inputArea && inputArea.value.trim() !== "") {
-            btn.removeAttribute('disabled');
+            btnToStepB.removeAttribute('disabled');
         } else {
-            btn.setAttribute('disabled', 'true');
+            btnToStepB.setAttribute('disabled', 'true');
         }
     };
 
@@ -82,33 +83,59 @@ function initPhase1Setup() {
         });
     }
 
-    // Nominatim OpenStreetMap Search
-    if (btnSearch) {
+    // Nominatim OpenStreetMap Search Helper (Does NOT lock the map)
+    if (btnSearch && searchInput && suggestionsBox) {
         btnSearch.addEventListener('click', async () => {
-            const query = document.getElementById('map-search').value;
+            const query = searchInput.value.trim();
             if (!query) return;
+            
             try {
                 btnSearch.innerText = "...";
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
                 const data = await response.json();
+                
+                suggestionsBox.innerHTML = ''; // Clear old
+                
                 if (data.length > 0) {
-                    // Zoom smoothly to the location
-                    map.flyTo([data[0].lat, data[0].lon], 17, { duration: 1.5 });
+                    data.forEach(place => {
+                        const li = document.createElement('li');
+                        li.className = 'p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-100 last:border-0 text-gray-700';
+                        li.innerText = place.display_name;
+                        
+                        // Human Validation Step: Fly to location, but wait for user to confirm
+                        li.onclick = () => {
+                            map.flyTo([place.lat, place.lon], 17, { duration: 1.5 });
+                            suggestionsBox.classList.add('hidden');
+                            searchInput.value = place.name || place.display_name.split(',')[0];
+                        };
+                        suggestionsBox.appendChild(li);
+                    });
+                    suggestionsBox.classList.remove('hidden');
                 } else {
-                    alert("Location not found. Try a broader search.");
+                    suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">No results found. Try a broader search.</li>';
+                    suggestionsBox.classList.remove('hidden');
                 }
             } catch (err) {
                 console.error("Search failed", err);
-                alert("Search Error. Check internet connection.");
+                suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">Network Error. Check connection.</li>';
+                suggestionsBox.classList.remove('hidden');
             } finally {
-                btnSearch.innerText = "Find";
+                btnSearch.innerText = "Search";
+            }
+        });
+
+        // Hide suggestions if clicking outside (Acode strict type-safe version)
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target instanceof Node && !searchInput.contains(target) && !suggestionsBox.contains(target) && !btnSearch.contains(target)) {
+                suggestionsBox.classList.add('hidden');
             }
         });
     }
 
-    // Final Geographic Lock
-    if (btnLock || oldLock) {
-        (btnLock || oldLock).addEventListener('click', () => {
+    // Final Geographic Lock (The Human Decision)
+    if (btnLock) {
+        btnLock.addEventListener('click', () => {
             state.user.enumeratorName = inputName ? inputName.value.trim() : "Unknown";
             state.user.hlbId = inputArea ? inputArea.value.trim() : "Unknown";
             state.ui.phase = 2;
@@ -117,7 +144,7 @@ function initPhase1Setup() {
                 document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
             }
 
-            lockArea();
+            lockArea(); // Executes Leaflet bounds lock
 
             if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
             if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
@@ -126,49 +153,61 @@ function initPhase1Setup() {
 }
 
 // ==========================================
-// 4. DRAGGABLE FAB ENGINE
+// 4. ELITE DRAGGABLE FAB ENGINE
 // ==========================================
-function makeDraggable(element) {
-    if (!element) return;
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    
-    // Only drag via the Main Button so sub-menus don't accidentally drag
+function makeDraggable(container) {
+    if (!container) return;
     const dragHandle = document.getElementById('fab-main');
-    if (dragHandle) {
-        dragHandle.onmousedown = dragMouseDown;
-        dragHandle.ontouchstart = dragMouseDown;
-    } else {
-        element.onmousedown = dragMouseDown;
-        element.ontouchstart = dragMouseDown;
-    }
+    if (!dragHandle) return;
 
-    function dragMouseDown(e) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+    dragHandle.onmousedown = dragStart;
+    dragHandle.ontouchstart = dragStart;
+
+    function dragStart(e) {
         e = e || window.event;
-        // Don't prevent default on touchstart or it breaks click events
-        pos3 = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-        pos4 = e.clientY || (e.touches ? e.touches[0].clientY : 0);
-        document.onmouseup = closeDragElement;
-        document.ontouchend = closeDragElement;
+        
+        if(e.type === 'touchstart') {
+            pos3 = e.touches[0].clientX;
+            pos4 = e.touches[0].clientY;
+        } else {
+            e.preventDefault(); 
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+        }
+        
+        document.onmouseup = closeDrag;
+        document.ontouchend = closeDrag;
         document.onmousemove = elementDrag;
         document.ontouchmove = elementDrag;
     }
 
     function elementDrag(e) {
         e = e || window.event;
-        let clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
-        let clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+        let clientX, clientY;
+        
+        if(e.type === 'touchmove') {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            e.preventDefault();
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
         pos1 = pos3 - clientX;
         pos2 = pos4 - clientY;
         pos3 = clientX;
         pos4 = clientY;
-        
-        element.style.top = (element.offsetTop - pos2) + "px";
-        element.style.left = (element.offsetLeft - pos1) + "px";
-        element.style.bottom = "auto";
-        element.style.right = "auto";
+
+        container.style.top = (container.offsetTop - pos2) + "px";
+        container.style.left = (container.offsetLeft - pos1) + "px";
+        container.style.bottom = "auto";
+        container.style.right = "auto";
     }
 
-    function closeDragElement() {
+    function closeDrag() {
         document.onmouseup = null;
         document.onmousemove = null;
         document.ontouchend = null;
@@ -185,7 +224,7 @@ function initFABLogic() {
     const fabSubmenu = document.getElementById('fab-submenu');
     if(!fabMain || !fabCategories) return;
 
-    fabMain.addEventListener('click', () => {
+    fabMain.addEventListener('click', (e) => {
         fabCategories.classList.toggle('hidden');
         fabCategories.classList.toggle('flex');
         if(fabSubmenu) fabSubmenu.classList.add('hidden');
@@ -222,6 +261,7 @@ function populateSubMenu(category) {
             <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_RES}"><div class="w-6 h-6 border-2 border-black bg-white"></div></button>
             <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_NON_RES}"><div class="w-6 h-6 border-2 border-black" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></button>
             <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_RES}"><div class="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"></div></button>
+            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_NON_RES}"><div class="relative w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"><div class="absolute top-[2px] -left-[8px] w-[16px] h-[16px]" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></div></button>
         `;
     } else if (category === CATEGORIES.LINE) {
         toolsHTML = `
@@ -256,39 +296,68 @@ function setActiveTool(toolId) {
 }
 
 // ==========================================
-// 6. GENERIC UI CONTROLS & BINDINGS
+// 6. GENERIC UI CONTROLS & ADVANCED SETTINGS
 // ==========================================
 function initUIControls() {
-    // Horizontal Transparency Slider
+    // Elite Transparency Slider: Fades Satellite Tiles, leaves vectors untouched
     const slider = document.getElementById('smokiness-slider');
-    const tracingLayer = document.getElementById('tracing-layer');
-    if (slider && tracingLayer) {
+    if (slider) {
         slider.addEventListener('input', (e) => {
             state.ui.smokiness = e.target.value;
-            const opacity = e.target.value / 100;
-            tracingLayer.style.backgroundColor = `rgba(255, 255, 255, ${opacity})`;
+            const opacity = 1 - (e.target.value / 100);
+            const tilePane = document.querySelector('.leaflet-tile-pane');
+            if (tilePane) tilePane.style.opacity = opacity.toString();
         });
     }
 
-    // Manual Refresh Sync Button
     const btnRefresh = document.getElementById('btn-refresh');
     if (btnRefresh) {
         btnRefresh.addEventListener('click', () => {
             redrawAllFeatures();
-            console.log("Forced UI Refresh Triggered.");
         });
     }
 
-    // GPS Toggle Binding (Clicking the GPS pill turns it on/off)
-    const gpsContainer = document.getElementById('gps-status')?.parentElement;
-    if (gpsContainer) {
-        gpsContainer.style.cursor = 'pointer';
-        gpsContainer.addEventListener('click', toggleGPS);
+    // Wiring Toggle GPS
+    const btnToggleGps = document.getElementById('btn-toggle-gps');
+    if (btnToggleGps) {
+        btnToggleGps.addEventListener('click', toggleGPS);
     }
 
-    // Export PDF
+    // Export Binding
     if(document.getElementById('btn-export')) {
         document.getElementById('btn-export').addEventListener('click', () => generatePDF());
+    }
+
+    // Base Map Layer Switcher
+    document.querySelectorAll('.map-layer-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.map-layer-btn').forEach(b => {
+                b.classList.remove('bg-blue-50', 'border-blue-500', 'text-blue-700');
+                b.classList.add('bg-gray-50', 'border-transparent', 'text-gray-600');
+            });
+            const target = e.currentTarget;
+            target.classList.remove('bg-gray-50', 'border-transparent', 'text-gray-600');
+            target.classList.add('bg-blue-50', 'border-blue-500', 'text-blue-700');
+            
+            toggleBaseMap(target.getAttribute('data-layer'));
+        });
+    });
+
+    // Force Map Sync
+    if(document.getElementById('btn-force-redraw')) {
+        document.getElementById('btn-force-redraw').addEventListener('click', () => {
+            redrawAllFeatures();
+            alert("Map data re-synced from memory successfully.");
+        });
+    }
+
+    // Emergency Wipe
+    if(document.getElementById('btn-emergency-reset')) {
+        document.getElementById('btn-emergency-reset').addEventListener('click', () => {
+            if(confirm("CRITICAL WARNING: This will permanently delete your drafted layout. Proceed?")) {
+                clearDraft();
+            }
+        });
     }
 
     // Slide-out Menu Wiring
@@ -315,8 +384,4 @@ function initUIControls() {
     if(btnMenu) btnMenu.addEventListener('click', toggleMenu);
     if(btnCloseMenu) btnCloseMenu.addEventListener('click', toggleMenu);
     if(menuOverlay) menuOverlay.addEventListener('click', toggleMenu);
-
-    if(document.getElementById('btn-emergency-reset')) {
-        document.getElementById('btn-emergency-reset').addEventListener('click', () => clearDraft());
-    }
 }
