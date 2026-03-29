@@ -1,13 +1,13 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 3 Master)
- * Features: Humanized Search Helper, Touch-Perfect Draggable UI, Elite Tile Fading, Linter-Safe.
+ * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 5 Master)
+ * Features: Undo/Redo Memory, Dark Mode Toggle, Multi-Format Export, and Fluid UI.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
 import { initMap, lockArea, map, toggleBaseMap, toggleGPS } from './map.js';
 import { initSymbols, redrawAllFeatures } from './symbol.js'; 
-import { generatePDF } from './export.js'; 
-import { loadDraftLocally, clearDraft } from './storage.js';
+import { generatePDF, generatePNG, generateCSV, generateJSON } from './export.js'; 
+import { loadDraftLocally, clearDraft, saveDraftLocally } from './storage.js';
 
 window.appLogs = [];
 const originalLog = console.log;
@@ -33,6 +33,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const hasSavedData = loadDraftLocally();
     if (hasSavedData && state.features.length > 0) {
+        // Initialize Undo Stack with loaded data
+        state.undoStack.push(JSON.parse(JSON.stringify(state.features)));
+
         if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
         if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
         if(document.getElementById('display-area-id')) document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
@@ -45,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initFABLogic();
     initUIControls();
     
-    // Sprint 3 Fix: Elite Mobile-Optimized Draggable Engine
     makeDraggable(document.getElementById('fab-container'));
 });
 
@@ -62,7 +64,6 @@ function initPhase1Setup() {
     const btnSearch = document.getElementById('btn-search');
     const suggestionsBox = document.getElementById('search-suggestions');
 
-    // Input Validation
     const checkInputs = () => {
         if (!btnToStepB) return;
         if (inputName && inputName.value.trim() !== "" && inputArea && inputArea.value.trim() !== "") {
@@ -75,7 +76,6 @@ function initPhase1Setup() {
     if(inputName) inputName.addEventListener('input', checkInputs);
     if(inputArea) inputArea.addEventListener('input', checkInputs);
 
-    // Step A to Step B Transition
     if (btnToStepB) {
         btnToStepB.addEventListener('click', () => {
             document.getElementById('setup-step-a').classList.add('hidden');
@@ -83,7 +83,6 @@ function initPhase1Setup() {
         });
     }
 
-    // Nominatim OpenStreetMap Search Helper (Does NOT lock the map)
     if (btnSearch && searchInput && suggestionsBox) {
         btnSearch.addEventListener('click', async () => {
             const query = searchInput.value.trim();
@@ -94,15 +93,14 @@ function initPhase1Setup() {
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
                 const data = await response.json();
                 
-                suggestionsBox.innerHTML = ''; // Clear old
+                suggestionsBox.innerHTML = ''; 
                 
                 if (data.length > 0) {
                     data.forEach(place => {
                         const li = document.createElement('li');
-                        li.className = 'p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-100 last:border-0 text-gray-700';
+                        li.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-100 dark:border-gray-700 last:border-0 text-gray-700 dark:text-gray-200 transition-colors';
                         li.innerText = place.display_name;
                         
-                        // Human Validation Step: Fly to location, but wait for user to confirm
                         li.onclick = () => {
                             map.flyTo([place.lat, place.lon], 17, { duration: 1.5 });
                             suggestionsBox.classList.add('hidden');
@@ -112,7 +110,7 @@ function initPhase1Setup() {
                     });
                     suggestionsBox.classList.remove('hidden');
                 } else {
-                    suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">No results found. Try a broader search.</li>';
+                    suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">No results found.</li>';
                     suggestionsBox.classList.remove('hidden');
                 }
             } catch (err) {
@@ -124,7 +122,6 @@ function initPhase1Setup() {
             }
         });
 
-        // Hide suggestions if clicking outside (Acode strict type-safe version)
         document.addEventListener('click', (e) => {
             const target = e.target;
             if (target instanceof Node && !searchInput.contains(target) && !suggestionsBox.contains(target) && !btnSearch.contains(target)) {
@@ -133,7 +130,6 @@ function initPhase1Setup() {
         });
     }
 
-    // Final Geographic Lock (The Human Decision)
     if (btnLock) {
         btnLock.addEventListener('click', () => {
             state.user.enumeratorName = inputName ? inputName.value.trim() : "Unknown";
@@ -144,7 +140,7 @@ function initPhase1Setup() {
                 document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
             }
 
-            lockArea(); // Executes Leaflet bounds lock
+            lockArea(); 
 
             if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
             if(document.getElementById('ui-layer')) document.getElementById('ui-layer').classList.remove('hidden');
@@ -167,7 +163,6 @@ function makeDraggable(container) {
 
     function dragStart(e) {
         e = e || window.event;
-        
         if(e.type === 'touchstart') {
             pos3 = e.touches[0].clientX;
             pos4 = e.touches[0].clientY;
@@ -176,7 +171,6 @@ function makeDraggable(container) {
             pos3 = e.clientX;
             pos4 = e.clientY;
         }
-        
         document.onmouseup = closeDrag;
         document.ontouchend = closeDrag;
         document.onmousemove = elementDrag;
@@ -186,7 +180,6 @@ function makeDraggable(container) {
     function elementDrag(e) {
         e = e || window.event;
         let clientX, clientY;
-        
         if(e.type === 'touchmove') {
             clientX = e.touches[0].clientX;
             clientY = e.touches[0].clientY;
@@ -224,7 +217,7 @@ function initFABLogic() {
     const fabSubmenu = document.getElementById('fab-submenu');
     if(!fabMain || !fabCategories) return;
 
-    fabMain.addEventListener('click', (e) => {
+    fabMain.addEventListener('click', () => {
         fabCategories.classList.toggle('hidden');
         fabCategories.classList.toggle('flex');
         if(fabSubmenu) fabSubmenu.classList.add('hidden');
@@ -258,23 +251,23 @@ function populateSubMenu(category) {
         return; 
     } else if (category === CATEGORIES.BUILDING) {
         toolsHTML = `
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_RES}"><div class="w-6 h-6 border-2 border-black bg-white"></div></button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_NON_RES}"><div class="w-6 h-6 border-2 border-black" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_RES}"><div class="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"></div></button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_NON_RES}"><div class="relative w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"><div class="absolute top-[2px] -left-[8px] w-[16px] h-[16px]" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></div></button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_RES}"><div class="w-6 h-6 border-2 border-black bg-white"></div></button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.PUCCA_NON_RES}"><div class="w-6 h-6 border-2 border-black" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_RES}"><div class="w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"></div></button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent" data-tool="${TOOLS.KUTCHA_NON_RES}"><div class="relative w-0 h-0 border-l-[12px] border-r-[12px] border-b-[20px] border-l-transparent border-r-transparent border-b-black"><div class="absolute top-[2px] -left-[8px] w-[16px] h-[16px]" style="background: repeating-linear-gradient(45deg, #000 0, #000 1px, #fff 0, #fff 4px);"></div></div></button>
         `;
     } else if (category === CATEGORIES.LINE) {
         toolsHTML = `
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LINE_STRAIGHT}">Straight</button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LINE_PATHWAY}">Path</button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LINE_BOUNDARY}">Boundary</button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LINE_FREEHAND}">Draw</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_MAINROAD}">Main</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_STRAIGHT}">Straight</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_PATHWAY}">Path</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LINE_FREEHAND}">Draw</button>
         `;
     } else if (category === CATEGORIES.LANDMARK) {
         toolsHTML = `
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LM_TAP}">[Tap]</button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LM_TEMPLE}">[Temple]</button>
-            <button class="tool-btn p-2 bg-gray-100 rounded border-2 border-transparent text-xs font-bold" data-tool="${TOOLS.LM_CUSTOM}">(+)</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LM_TAP}">[Tap]</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LM_TEMPLE}">[Temple]</button>
+            <button class="tool-btn p-2 bg-gray-100 dark:bg-gray-700 rounded border-2 border-transparent text-xs font-bold dark:text-white" data-tool="${TOOLS.LM_CUSTOM}">(+)</button>
         `;
     }
 
@@ -296,10 +289,51 @@ function setActiveTool(toolId) {
 }
 
 // ==========================================
-// 6. GENERIC UI CONTROLS & ADVANCED SETTINGS
+// 6. GENERIC UI CONTROLS & MEMORY ENGINE
 // ==========================================
 function initUIControls() {
-    // Elite Transparency Slider: Fades Satellite Tiles, leaves vectors untouched
+    
+    // --- Dark Mode Toggle ---
+    const darkToggle = document.getElementById('toggle-dark-mode');
+    if (darkToggle) {
+        darkToggle.addEventListener('change', (e) => {
+            if (e.target.checked) document.body.classList.add('dark');
+            else document.body.classList.remove('dark');
+        });
+    }
+
+    // --- Undo & Redo Engine ---
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
+
+    if (btnUndo) {
+        btnUndo.addEventListener('click', () => {
+            if (state.undoStack.length > 0) {
+                const currentState = state.undoStack.pop();
+                state.redoStack.push(currentState);
+                
+                // Revert to the previous state in the stack, or empty if none left
+                state.features = state.undoStack.length > 0 ? JSON.parse(JSON.stringify(state.undoStack[state.undoStack.length - 1])) : [];
+                redrawAllFeatures();
+                saveDraftLocally();
+            }
+        });
+    }
+
+    if (btnRedo) {
+        btnRedo.addEventListener('click', () => {
+            if (state.redoStack.length > 0) {
+                const nextState = state.redoStack.pop();
+                state.undoStack.push(nextState);
+                
+                state.features = JSON.parse(JSON.stringify(nextState));
+                redrawAllFeatures();
+                saveDraftLocally();
+            }
+        });
+    }
+
+    // --- Transparency Slider ---
     const slider = document.getElementById('smokiness-slider');
     if (slider) {
         slider.addEventListener('input', (e) => {
@@ -312,23 +346,28 @@ function initUIControls() {
 
     const btnRefresh = document.getElementById('btn-refresh');
     if (btnRefresh) {
-        btnRefresh.addEventListener('click', () => {
-            redrawAllFeatures();
-        });
+        btnRefresh.addEventListener('click', () => redrawAllFeatures());
     }
 
-    // Wiring Toggle GPS
     const btnToggleGps = document.getElementById('btn-toggle-gps');
-    if (btnToggleGps) {
-        btnToggleGps.addEventListener('click', toggleGPS);
-    }
+    if (btnToggleGps) btnToggleGps.addEventListener('click', toggleGPS);
 
-    // Export Binding
-    if(document.getElementById('btn-export')) {
-        document.getElementById('btn-export').addEventListener('click', () => generatePDF());
-    }
+    // --- Export Menu Connections ---
+    if (document.getElementById('btn-export')) document.getElementById('btn-export').addEventListener('click', generatePDF);
+    if (document.getElementById('export-pdf')) document.getElementById('export-pdf').addEventListener('click', generatePDF);
+    if (document.getElementById('export-png')) document.getElementById('export-png').addEventListener('click', async () => {
+        const imgData = await generatePNG();
+        if (imgData) {
+            const link = document.createElement("a");
+            link.href = imgData;
+            link.download = `Map_Layout_${state.user.hlbId || "Draft"}.png`;
+            link.click();
+        }
+    });
+    if (document.getElementById('export-csv')) document.getElementById('export-csv').addEventListener('click', generateCSV);
+    if (document.getElementById('export-json')) document.getElementById('export-json').addEventListener('click', generateJSON);
 
-    // Base Map Layer Switcher
+    // --- Base Map Layer Switcher ---
     document.querySelectorAll('.map-layer-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.map-layer-btn').forEach(b => {
@@ -338,29 +377,24 @@ function initUIControls() {
             const target = e.currentTarget;
             target.classList.remove('bg-gray-50', 'border-transparent', 'text-gray-600');
             target.classList.add('bg-blue-50', 'border-blue-500', 'text-blue-700');
-            
             toggleBaseMap(target.getAttribute('data-layer'));
         });
     });
 
-    // Force Map Sync
     if(document.getElementById('btn-force-redraw')) {
         document.getElementById('btn-force-redraw').addEventListener('click', () => {
             redrawAllFeatures();
-            alert("Map data re-synced from memory successfully.");
+            alert("Deep Sync Render completed.");
         });
     }
 
-    // Emergency Wipe
     if(document.getElementById('btn-emergency-reset')) {
         document.getElementById('btn-emergency-reset').addEventListener('click', () => {
-            if(confirm("CRITICAL WARNING: This will permanently delete your drafted layout. Proceed?")) {
-                clearDraft();
-            }
+            if(confirm("CRITICAL WARNING: This will permanently delete your drafted layout. Proceed?")) clearDraft();
         });
     }
 
-    // Slide-out Menu Wiring
+    // --- Slide-out Menu Wiring ---
     const btnMenu = document.getElementById('btn-menu');
     const btnCloseMenu = document.getElementById('btn-close-menu');
     const settingsMenu = document.getElementById('settings-menu');
