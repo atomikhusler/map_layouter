@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Elite Drafting Engine (Sprint 5)
- * Features: Long-Press Naming, Fat Hit-Boxes for Eraser, Rubber-Band Straight Lines, and Parallel Tracks.
+ * MAP LAYOUT DRAFTER - Elite Drafting Engine (Sprint 5 Master - Patched)
+ * Features: Long-Press Naming, Fat Hit-Boxes (0.01 Opacity), Rubber-Band Lines.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
@@ -94,10 +94,8 @@ function bindFeatureEvents(layer, featureData) {
     let pressTimer;
 
     const startPress = (e) => {
-        // Ignore multi-touch
         if (e.originalEvent && e.originalEvent.touches && e.originalEvent.touches.length > 1) return;
         
-        // Start 600ms timer for Long-Press
         pressTimer = setTimeout(() => {
             handleLongPress(featureData, layer);
         }, 600); 
@@ -105,7 +103,6 @@ function bindFeatureEvents(layer, featureData) {
 
     const cancelPress = () => { clearTimeout(pressTimer); };
 
-    // Bind Touch/Mouse Events
     layer.on('mousedown', startPress);
     layer.on('touchstart', startPress);
     
@@ -114,25 +111,21 @@ function bindFeatureEvents(layer, featureData) {
     layer.on('touchend', cancelPress);
     layer.on('touchmove', cancelPress);
 
-    // Standard Click/Tap Route
     layer.on('click', () => handleFeatureTap(featureData, layer));
 }
 
 function handleLongPress(feature, layer) {
-    // Only name Landmarks and Lines on Long Press
     if (feature.category === CATEGORIES.LANDMARK || feature.category === CATEGORIES.LINE) {
         const newName = prompt(`Enter name for this ${feature.category}:`, feature.label.replace(/\[|\]/g, ''));
         if (newName && newName.trim() !== "") {
             feature.label = `[${newName.trim()}]`;
             
-            // If landmark, physically update the text on the map instantly
             if (feature.category === CATEGORIES.LANDMARK) {
                 const iconHtml = `<div class="font-bold text-sm text-black whitespace-nowrap drop-shadow-md text-shadow-white">${feature.label}</div>`;
                 const wrapperHtml = `<div class="marker-scaler w-full h-full flex flex-col items-center justify-center transform-origin-center transition-transform duration-75">${iconHtml}</div>`;
                 layer.setIcon(L.divIcon({ className: 'draft-symbol', html: wrapperHtml, iconSize: [40, 40], iconAnchor: [20, 20] }));
                 scaleDraftSymbols();
             } else if (feature.category === CATEGORIES.LINE) {
-                // Flash the road blue to confirm it was named
                 layer.eachLayer(l => {
                     if (l.options.color === '#000' || l.options.color === '#4b5563') {
                         const originalColor = l.options.color;
@@ -187,7 +180,6 @@ function placeBuilding(latlng, tool) {
 function placeLandmark(latlng, tool) {
     const featureId = `lm_${Date.now()}`;
     let baseName = tool === TOOLS.LM_CUSTOM ? "Landmark" : tool.replace('lm_', '');
-    // Capitalize first letter
     baseName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
     
     const label = `[${baseName}]`;
@@ -217,11 +209,10 @@ function startLine(latlng) {
 function updateLine(latlng) {
     if (!isDrawingLine || !activePolylineGroup) return;
     
-    // RUBBER BAND LOGIC: Straight Line only uses Start and End point
     if (state.ui.currentTool === TOOLS.LINE_STRAIGHT) {
-        activeCoordinates[1] = latlng; // Overwrite second point
+        activeCoordinates[1] = latlng; 
     } else {
-        activeCoordinates.push(latlng); // Freehand continues adding points
+        activeCoordinates.push(latlng); 
     }
     
     activePolylineGroup.eachLayer(layer => {
@@ -243,7 +234,7 @@ function finishLine() {
         bindFeatureEvents(activePolylineGroup, featureData);
         saveState(featureData);
     } else if (activePolylineGroup) {
-        featureLayer.removeLayer(activePolylineGroup); // Purge ghost taps
+        featureLayer.removeLayer(activePolylineGroup); 
     }
     activePolylineGroup = null;
     activeCoordinates = [];
@@ -253,9 +244,7 @@ function finishLine() {
  * Builds the geometric layers of a line, including the FAT HIT-BOX
  */
 function renderLineGraphics(group, coords, tool) {
-    // 1. The Visible Line Rendering
     if (tool === TOOLS.LINE_MAINROAD) {
-        // True Parallel Black Lines (8px black underneath, 4px white inside)
         L.polyline(coords, { color: '#000', weight: 8 }).addTo(group);
         L.polyline(coords, { color: '#fff', weight: 4 }).addTo(group);
     } else if (tool === TOOLS.LINE_METALLED) {
@@ -269,30 +258,26 @@ function renderLineGraphics(group, coords, tool) {
     } else if (tool === TOOLS.LINE_BOUNDARY) {
         L.polyline(coords, { color: '#000', weight: 4, dashArray: '15, 10, 5, 10' }).addTo(group);
     } else {
-        // Straight and Freehand defaults
         L.polyline(coords, { color: '#000', weight: 3, smoothFactor: 1.0 }).addTo(group);
     }
 
-    // 2. THE FAT HIT-BOX (Secret transparent 30px line to catch Eraser taps)
-    L.polyline(coords, { color: 'transparent', weight: 30, opacity: 0 }).addTo(group);
+    // ELITE FIX: Opacity set to 0.01 so Android touch sensors can 'feel' the Eraser hit-box
+    L.polyline(coords, { color: 'transparent', weight: 30, opacity: 0.01 }).addTo(group);
 }
 
 // ==========================================
 // 5. INSPECTOR & ERASER LOGIC
 // ==========================================
 function handleFeatureTap(featureData, layer) {
-    // Erase Route
     if (state.ui.currentCategory === CATEGORIES.ERASER) {
         if (confirm(`Erase this ${featureData.category}?`)) {
             featureLayer.removeLayer(layer);
             state.features = state.features.filter(f => f.id !== featureData.id);
-            // Push removal to undo stack
             saveState(); 
         }
         return;
     }
 
-    // Inspect Building Route (Hand Tool)
     if (state.ui.currentCategory === CATEGORIES.HAND && featureData.category === CATEGORIES.BUILDING) {
         activeInspectorFeatureId = featureData.id;
         activeInspectorMarker = layer;
@@ -349,9 +334,7 @@ function scaleDraftSymbols() {
 function saveState(newFeature = null) {
     if (newFeature) {
         state.features.push(newFeature);
-        // Wipe redo stack on new action
         state.redoStack = []; 
-        // Push full state copy to Undo Stack
         state.undoStack.push(JSON.parse(JSON.stringify(state.features)));
     }
     saveDraftLocally();

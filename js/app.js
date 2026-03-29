@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 5 Master)
- * Features: Undo/Redo Memory, Dark Mode Toggle, Multi-Format Export, and Fluid UI.
+ * MAP LAYOUT DRAFTER - Bootstrapper & UI Controller (Sprint 5 Master - Patched)
+ * Features: Android Touch Fix, Undo/Redo Memory, Dark Mode, Multi-Format Export.
  */
 
 import { state, CATEGORIES, TOOLS } from './config.js';
@@ -23,9 +23,11 @@ console.error = function(...args) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Prevent accidental zooming/scrolling on the UI layer
+    // ELITE FIX: Added 'e.scale &&' to prevent Android devices from freezing
     document.addEventListener('touchmove', (e) => {
-        if (e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { e.preventDefault(); } 
+        if (e.scale && e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { 
+            e.preventDefault(); 
+        } 
     }, { passive: false });
 
     initMap();
@@ -33,7 +35,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const hasSavedData = loadDraftLocally();
     if (hasSavedData && state.features.length > 0) {
-        // Initialize Undo Stack with loaded data
         state.undoStack.push(JSON.parse(JSON.stringify(state.features)));
 
         if(document.getElementById('setup-layer')) document.getElementById('setup-layer').classList.add('hidden');
@@ -312,7 +313,6 @@ function initUIControls() {
                 const currentState = state.undoStack.pop();
                 state.redoStack.push(currentState);
                 
-                // Revert to the previous state in the stack, or empty if none left
                 state.features = state.undoStack.length > 0 ? JSON.parse(JSON.stringify(state.undoStack[state.undoStack.length - 1])) : [];
                 redrawAllFeatures();
                 saveDraftLocally();
