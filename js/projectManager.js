@@ -1,6 +1,7 @@
 /**
- * MAP LAYOUT DRAFTER - Project Manager Module (V7 Master)
- * Handles Atomic Project Switching, Renaming, and Memory Wipes.
+ * MAP LAYOUT DRAFTER - V9 Premium Architecture
+ * Project Manager Module (Atomic State Transitions)
+ * Fixes: Strict DOM Type-Guarding, Flawless Area Switching.
  */
 
 import { state } from './config.js';
@@ -21,9 +22,9 @@ export function switchProject(targetProjectId) {
     state.activeProjectId = targetProjectId;
     const activeProject = state.projects[targetProjectId];
 
-    // 3. UI Update: Change the Area ID badge
+    // 3. UI Update: Change the Area ID badge (Type-Safe)
     const areaDisplay = document.getElementById('display-area-id');
-    if (areaDisplay) {
+    if (areaDisplay instanceof HTMLElement) {
         areaDisplay.innerText = `Area: ${state.user.hlbId || "Unknown"} (${activeProject.name})`;
     }
 
@@ -38,15 +39,14 @@ export function switchProject(targetProjectId) {
             duration: 1.5,
             animate: true 
         });
-                // Re-lock the map bounds after the flight completes
+        
+        // Re-lock the map bounds after the flight completes
         map.once('moveend', () => {
-            if (activeProject.mapBounds) {
-                // FIX: Safely reconstruct Leaflet bounds from raw array
+            if (activeProject.mapBounds && activeProject.mapBounds.length === 2) {
                 const bounds = L.latLngBounds(activeProject.mapBounds[0], activeProject.mapBounds[1]);
                 map.setMaxBounds(bounds);
             }
         });
-        
     }
 
     console.log(`[Project Manager] Successfully pivoted to ${activeProject.name}`);
@@ -89,7 +89,9 @@ export function deleteProject(projectId) {
     if (state.activeProjectId === projectId) {
         redrawAllFeatures();
         const areaDisplay = document.getElementById('display-area-id');
-        if (areaDisplay) areaDisplay.innerText = `Area: NOT SET (${project.name})`;
+        if (areaDisplay instanceof HTMLElement) {
+            areaDisplay.innerText = `Area: NOT SET (${project.name})`;
+        }
         
         // Remove map restrictions so they can search for a new area
         map.setMaxBounds(null);
