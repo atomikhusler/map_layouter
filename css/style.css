@@ -1,59 +1,101 @@
-/* * MAP LAYOUT DRAFTER - V8 Elite Master Stylesheet
- * Features: Slim Glass UI, Picsart Bounding Boxes, Zero-Scroll Locks
+/**
+ * MAP LAYOUT DRAFTER - V9 Premium Architecture
+ * Universal Fluid Styling & Layout Engine
  */
 
 /* ==========================================
-   1. CORE & RESET
+   1. CORE VARIABLES & HARD RESETS
    ========================================== */
+:root {
+    --glass-bg-light: rgba(255, 255, 255, 0.85);
+    --glass-border-light: rgba(255, 255, 255, 0.6);
+    --glass-bg-dark: rgba(31, 41, 55, 0.90);
+    --glass-border-dark: rgba(75, 85, 99, 0.5);
+    --brand-blue: #2563eb;
+}
+
 html, body {
     margin: 0;
     padding: 0;
     width: 100%;
     height: 100%;
-    overflow: hidden; /* Hard lock to prevent accidental browser refresh pulls */
+    overflow: hidden; /* Hard lock to prevent browser bounce */
     overscroll-behavior: none;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+    font-family: system-ui, -apple-system, sans-serif;
 }
 
+/* Invisible Scrollbars for clean UI */
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* ==========================================
-   2. GLASSMORPHISM (V8 Ultra-Slim)
+   2. FLUID GLASSMORPHISM
    ========================================== */
 .glass-panel {
-    background: rgba(255, 255, 255, 0.85);
+    background: var(--glass-bg-light);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--glass-border-light);
+    /* Fluid corner rounding based on screen size */
+    border-radius: clamp(0.75rem, 2vw, 1.25rem); 
+    box-shadow: 0 4px 15px rgba(0,0,0,0.06);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dark .glass-panel {
-    background: rgba(31, 41, 55, 0.85);
-    border: 1px solid rgba(75, 85, 99, 0.5);
+    background: var(--glass-bg-dark);
+    border: 1px solid var(--glass-border-dark);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
 }
 
 /* ==========================================
-   3. BOTTOM DOCK UI
+   3. UNIVERSAL RESPONSIVE COMPONENTS
    ========================================== */
+/* Tool Pills scale perfectly between mobile and desktop */
 .fab-cat-btn {
-    width: 44px !important;
-    height: 44px !important;
+    width: clamp(38px, 8vw, 48px) !important;
+    height: clamp(38px, 8vw, 48px) !important;
 }
 
 #fab-submenu .tool-btn {
-    padding: 6px 10px !important;
+    padding: clamp(4px, 1vw, 8px) clamp(8px, 2vw, 12px) !important;
+}
+
+/* Dark Mode Fixes for Inputs */
+input {
+    color: #1f2937;
+}
+.dark input {
+    color: #ffffff !important;
+    background-color: rgba(17, 24, 39, 0.6) !important; 
+}
+.dark input::placeholder {
+    color: #9ca3af !important;
+}
+
+/* Search Suggestion Z-Index Overhaul */
+#search-suggestions {
+    z-index: 9999 !important;
+    max-height: 40vh; /* Prevents long lists from breaking mobile screens */
 }
 
 /* ==========================================
-   4. PICSART SCALING ENGINE (Phase 1 Geometry)
+   4. LEAFLET PRECISION RENDERING PANES
+   ========================================== */
+/* Guarantees roads never cover buildings, and labels stay on top */
+.leaflet-roads-pane { z-index: 200 !important; }
+.leaflet-buildings-pane { z-index: 300 !important; }
+.leaflet-labels-pane { z-index: 400 !important; }
+
+/* ==========================================
+   5. PICSART BOUNDING BOX PHYSICS
    ========================================== */
 .marker-scaler {
     transform-origin: center center;
-    pointer-events: none; /* Let the map handle pure dragging */
+    pointer-events: none; 
     position: relative;
 }
 
@@ -62,12 +104,12 @@ html, body {
     border: none !important;
 }
 
-/* The Bounding Box (Appears when tapped) */
+/* The Selection Dashed Box */
 .symbol-selected .marker-scaler::before {
     content: '';
     position: absolute;
     top: -8px; left: -8px; right: -8px; bottom: -8px;
-    border: 2px dashed #3b82f6;
+    border: 2px dashed var(--brand-blue);
     border-radius: 4px;
     pointer-events: none;
     z-index: 10;
@@ -79,31 +121,29 @@ html, body {
     position: absolute;
     bottom: -14px;
     right: -14px;
-    width: 24px;
-    height: 24px;
+    width: clamp(20px, 5vw, 26px);
+    height: clamp(20px, 5vw, 26px);
     background-color: #ffffff;
-    border: 3px solid #3b82f6;
+    border: 3px solid var(--brand-blue);
     border-radius: 50%;
     box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    pointer-events: auto; /* Catch the touch event */
+    pointer-events: auto; 
     display: none;
     z-index: 20;
     cursor: nwse-resize;
 }
 
-/* Show handle only when selected */
 .symbol-selected .resize-handle {
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-/* Inner dot for the handle */
 .resize-handle::after {
     content: '';
-    width: 8px;
-    height: 8px;
-    background-color: #3b82f6;
+    width: clamp(6px, 1.5vw, 10px);
+    height: clamp(6px, 1.5vw, 10px);
+    background-color: var(--brand-blue);
     border-radius: 50%;
 }
 
@@ -111,7 +151,7 @@ html, body {
     to { stroke-dashoffset: -1000; }
 }
 
-/* Text Shadow for better contrast on satellite */
+/* Text Shadow for better contrast on satellite/white maps */
 .text-shadow-white {
     text-shadow: 
         -1px -1px 0 #fff,  
