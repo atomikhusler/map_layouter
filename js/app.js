@@ -1,6 +1,6 @@
 /**
- * MAP LAYOUT DRAFTER - Main Controller (V7 Master)
- * Hooks the Glass UI to the Omni-Vault and Project Manager.
+ * MAP LAYOUT DRAFTER - Main Controller (V7.1 Bulletproof Master)
+ * Cures: Screen Freezes, Blur Fog, and Android Back-Button Crashes.
  */
 
 import { state, CATEGORIES, TOOLS, getActiveProject } from './config.js';
@@ -27,13 +27,34 @@ console.error = function(...args) {
 let pendingTargetProjectId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Hardware Back Button Lock
+    
+    // ELITE FIX: Prevent Android hardware back-button from crashing the WebView via alerts
     window.history.pushState(null, null, window.location.href);
     window.onpopstate = function () {
         window.history.pushState(null, null, window.location.href);
-        saveDraftLocally(); // Force a save just in case
-        alert("Please use the on-screen menus to navigate. Back button disabled to prevent data loss.");
+        saveDraftLocally(); 
+        
+        // Show non-blocking Toast instead of thread-blocking alert()
+        const existingToast = document.getElementById('back-toast');
+        if (existingToast) existingToast.remove();
+        
+        const toast = document.createElement('div');
+        toast.id = 'back-toast';
+        toast.className = 'absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-5 py-3 rounded-full text-xs font-bold z-[9999] shadow-lg text-center transition-opacity duration-300 opacity-0 pointer-events-none';
+        toast.innerText = 'App navigation protected. Use the on-screen menus.';
+        document.body.appendChild(toast);
+        
+        setTimeout(() => toast.classList.remove('opacity-0'), 10);
+        setTimeout(() => {
+            toast.classList.add('opacity-0');
+            setTimeout(() => toast.remove(), 300);
+        }, 2000);
     };
+
+    // ELITE FIX: Force save to Omni-Vault if the user manually closes the browser tab
+    window.addEventListener('beforeunload', () => {
+        saveDraftLocally();
+    });
 
     // Prevent Android zoom freezing
     document.addEventListener('touchmove', (e) => {
@@ -109,9 +130,15 @@ function initPhase1Setup() {
         btnToStepB.addEventListener('click', () => {
             document.getElementById('setup-step-a').classList.add('hidden');
             document.getElementById('setup-step-b').classList.remove('hidden');
+            
+            // ELITE FIX: Completely overwrite the class tree to guarantee fog removal
+            const setupLayer = document.getElementById('setup-layer');
+            if(setupLayer) {
+                setupLayer.className = "absolute inset-0 z-[70] pointer-events-none flex flex-col items-center justify-center";
+            }
         });
     }
-
+    
     if (btnSearch && searchInput && suggestionsBox) {
         btnSearch.addEventListener('click', async () => {
             const query = searchInput.value.trim();
@@ -178,7 +205,6 @@ function initDockLogic() {
     const dockButtons = document.querySelectorAll('.fab-cat-btn');
     dockButtons.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            // Visual Update
             dockButtons.forEach(b => {
                 b.classList.remove('bg-blue-100', 'text-blue-600', 'dark:bg-blue-900/40', 'dark:text-blue-400');
                 b.classList.add('text-gray-600', 'dark:text-gray-300');
@@ -186,14 +212,12 @@ function initDockLogic() {
             e.currentTarget.classList.remove('text-gray-600', 'dark:text-gray-300');
             e.currentTarget.classList.add('bg-blue-100', 'text-blue-600', 'dark:bg-blue-900/40', 'dark:text-blue-400');
 
-            // State Update
             const category = e.currentTarget.getAttribute('data-cat');
             state.ui.currentCategory = category;
             populateSubMenu(category);
         });
     });
 
-    // Set default tool
     const defaultBtn = document.querySelector('.fab-cat-btn[data-cat="hand"]');
     if (defaultBtn) defaultBtn.click();
 }
@@ -246,7 +270,6 @@ function populateSubMenu(category) {
         });
     });
 
-    // Auto-select first tool
     const firstTool = submenu.querySelector('.tool-btn');
     if (firstTool) firstTool.click();
 }
@@ -260,7 +283,6 @@ function setActiveTool(toolId) {
 // ==========================================
 function initUIControls() {
     
-    // Developer Logs
     const brandingPill = document.getElementById('branding-pill');
     let tapCount = 0; let tapTimer;
     if (brandingPill) {
@@ -280,7 +302,6 @@ function initUIControls() {
         });
     }
 
-    // Settings Menu
     document.getElementById('toggle-dark-mode').addEventListener('change', (e) => {
         state.ui.isDarkMode = e.target.checked; 
         if (e.target.checked) document.body.classList.add('dark');
@@ -299,7 +320,6 @@ function initUIControls() {
         slider.addEventListener('change', () => saveDraftLocally());
     }
 
-    // Top Bar Tools
     document.getElementById('btn-undo').addEventListener('click', () => {
         const activeProject = getActiveProject();
         if (activeProject.undoStack.length > 0) {
@@ -325,7 +345,6 @@ function initUIControls() {
     document.getElementById('btn-refresh').addEventListener('click', () => redrawAllFeatures());
     document.getElementById('btn-toggle-gps').addEventListener('click', toggleGPS);
 
-    // Exports
     document.getElementById('export-pdf').addEventListener('click', () => { if (Exporter.generatePDF) Exporter.generatePDF(); });
     document.getElementById('export-png').addEventListener('click', async () => {
         if (Exporter.generatePNG) {
@@ -342,14 +361,12 @@ function initUIControls() {
         if(confirm("CRITICAL WARNING: This eradicates the Omni-Vault memory permanently. Proceed?")) clearDraft();
     });
 
-    // Inspector Close
     document.getElementById('btn-close-inspector').addEventListener('click', () => {
         document.getElementById('inspector-panel').classList.add('scale-95', 'opacity-0', 'pointer-events-none');
         setTimeout(() => document.getElementById('inspector-panel').classList.add('hidden'), 200);
         document.getElementById('ui-overlay').classList.add('opacity-0', 'pointer-events-none');
     });
 }
-
 // ==========================================
 // PROJECT DRAWER LOGIC
 // ==========================================
@@ -361,21 +378,36 @@ function initProjectDrawerLogic() {
     const popover = document.getElementById('popover-project-actions');
     const switchModal = document.getElementById('modal-project-switch');
 
-    // Toggle Drawer
     const toggleMenu = () => {
+        if (!settingsMenu || !uiOverlay) return;
         const isClosed = settingsMenu.classList.contains('translate-x-full');
         if (isClosed) {
-            renderProjectCards(); // Refresh UI before opening
+            renderProjectCards(); 
             settingsMenu.classList.remove('translate-x-full');
-            uiOverlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
-            uiOverlay.classList.add('opacity-100');
+            uiOverlay.classList.remove('hidden');
+            
+            // Allow display:block to execute before fading in
+            setTimeout(() => {
+                uiOverlay.classList.remove('opacity-0', 'pointer-events-none');
+                uiOverlay.classList.add('opacity-100', 'pointer-events-auto');
+            }, 10);
         } else {
             settingsMenu.classList.add('translate-x-full');
+            
+            // ELITE FIX: Eradicate invisible shield causing screen freezes
+            uiOverlay.classList.remove('opacity-100', 'pointer-events-auto');
             uiOverlay.classList.add('opacity-0', 'pointer-events-none');
-            popover.classList.add('hidden'); // Ensure popover closes
+            popover.classList.add('hidden'); 
+            
+            // Crucial: Put 'hidden' back after the fade animation finishes
+            setTimeout(() => {
+                if (settingsMenu.classList.contains('translate-x-full')) {
+                    uiOverlay.classList.add('hidden');
+                }
+            }, 300);
         }
     };
-
+    
     btnMenu.addEventListener('click', toggleMenu);
     btnCloseMenu.addEventListener('click', toggleMenu);
     uiOverlay.addEventListener('click', () => {
@@ -384,17 +416,16 @@ function initProjectDrawerLogic() {
         popover.classList.add('hidden');
     });
 
-    // Switch Modal Buttons
     document.getElementById('btn-cancel-switch').addEventListener('click', closeSwitchModal);
     document.getElementById('btn-confirm-switch').addEventListener('click', () => {
         if (pendingTargetProjectId) {
             switchProject(pendingTargetProjectId);
-            renderProjectCards(); // Update borders
+            renderProjectCards(); 
         }
         closeSwitchModal();
-        toggleMenu(); // Close drawer after switch
+        toggleMenu(); 
     });
-    // Popover Actions
+
     document.getElementById('action-rename-project').addEventListener('click', () => {
         if (!pendingTargetProjectId) return;
         const project = state.projects[pendingTargetProjectId];
@@ -427,7 +458,6 @@ export function renderProjectCards() {
         const featureCount = p.features ? p.features.length : 0;
         const statusText = isActive ? "Active Project" : (p.isAreaLocked ? `${featureCount} Features` : "Empty Slot");
         
-        // Styling based on active status
         const cardClass = isActive 
             ? "project-card relative bg-blue-50 dark:bg-blue-900/20 p-3.5 rounded-xl border-2 border-blue-500 shadow-sm cursor-pointer transition-all"
             : "project-card relative bg-gray-50 dark:bg-gray-800 p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 cursor-pointer hover:border-blue-400 transition-all";
@@ -449,10 +479,8 @@ export function renderProjectCards() {
         container.insertAdjacentHTML('beforeend', cardHTML);
     });
 
-    // Attach listeners to new cards
     document.querySelectorAll('.project-card').forEach(card => {
         card.addEventListener('click', (e) => {
-            // Ignore if they clicked the 3 dots
             if (e.target.classList.contains('project-menu-trigger')) return; 
             
             const targetId = card.getAttribute('data-id');
@@ -460,25 +488,22 @@ export function renderProjectCards() {
                 pendingTargetProjectId = targetId;
                 openSwitchModal(state.projects[targetId].name);
             } else if (targetId !== state.activeProjectId && !state.projects[targetId].isAreaLocked) {
-                // Instantly switch to empty projects without modal
                 switchProject(targetId);
                 renderProjectCards();
             }
         });
     });
 
-    // Attach listeners to 3-dots
     document.querySelectorAll('.project-menu-trigger').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             pendingTargetProjectId = e.currentTarget.getAttribute('data-id');
             const popover = document.getElementById('popover-project-actions');
             
-            // Calculate popover position
             const rect = e.currentTarget.getBoundingClientRect();
             popover.style.top = `${rect.bottom + 5}px`;
             popover.style.right = `${window.innerWidth - rect.right}px`;
-            popover.style.left = 'auto'; // ensure it anchors to right side
+            popover.style.left = 'auto'; 
             
             popover.classList.remove('hidden');
         });
@@ -488,12 +513,10 @@ export function renderProjectCards() {
 function openSwitchModal(projectName) {
     const modal = document.getElementById('modal-project-switch');
     const overlay = document.getElementById('ui-overlay');
-    // Ensure overlay covers drawer
     overlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
-    overlay.classList.add('opacity-100', 'z-[110]'); 
+    overlay.classList.add('opacity-100', 'z-[110]', 'pointer-events-auto'); 
     modal.classList.remove('hidden');
     
-    // Animate in
     setTimeout(() => {
         modal.classList.remove('scale-95', 'opacity-0');
     }, 10);
@@ -506,7 +529,12 @@ function closeSwitchModal() {
     modal.classList.add('scale-95', 'opacity-0');
     setTimeout(() => {
         modal.classList.add('hidden');
-        // Restore overlay to normal drawer level if drawer is open
         overlay.classList.remove('z-[110]');
+        // Only hide overlay if drawer isn't active
+        const settingsMenu = document.getElementById('settings-menu');
+        if (settingsMenu && settingsMenu.classList.contains('translate-x-full')) {
+             overlay.classList.add('hidden', 'opacity-0', 'pointer-events-none');
+             overlay.classList.remove('opacity-100', 'pointer-events-auto');
+        }
     }, 200);
 }

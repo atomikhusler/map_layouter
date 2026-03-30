@@ -38,13 +38,15 @@ export function switchProject(targetProjectId) {
             duration: 1.5,
             animate: true 
         });
-
-        // Re-lock the map bounds after the flight completes
+                // Re-lock the map bounds after the flight completes
         map.once('moveend', () => {
             if (activeProject.mapBounds) {
-                map.setMaxBounds(activeProject.mapBounds);
+                // FIX: Safely reconstruct Leaflet bounds from raw array
+                const bounds = L.latLngBounds(activeProject.mapBounds[0], activeProject.mapBounds[1]);
+                map.setMaxBounds(bounds);
             }
         });
+        
     }
 
     console.log(`[Project Manager] Successfully pivoted to ${activeProject.name}`);
