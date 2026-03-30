@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lmd-field-cache-v7'; // CRITICAL: Bumped to V7 to force total system update
+const CACHE_NAME = 'lmd-field-cache-v8'; // CRITICAL: Bumped to V8 to force total system update
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
@@ -9,7 +9,7 @@ const ASSETS_TO_CACHE = [
     './js/map.js',
     './js/symbol.js', 
     './js/storage.js',
-    './js/projectManager.js', // ELITE FIX: The new V7 module must be cached for offline use!
+    './js/projectManager.js', 
     './js/export.js',
     './logo.png' 
 ];
@@ -18,7 +18,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            console.log('[Service Worker] Caching V7 Master App Shell');
+            console.log('[Service Worker] Caching V8 Master App Shell');
             return cache.addAll(ASSETS_TO_CACHE);
         })
     );
@@ -64,7 +64,7 @@ self.addEventListener('activate', (event) => {
         caches.keys().then((cacheNames) => {
             return Promise.all(
                 cacheNames.map((cache) => {
-                    // Instantly hunt down and destroy the old v5 cache
+                    // Instantly hunt down and destroy the old v7 cache
                     if (cache !== CACHE_NAME && cache !== 'lmd-map-tiles') {
                         console.log(`[Service Worker] Eradicating obsolete cache: ${cache}`);
                         return caches.delete(cache);
