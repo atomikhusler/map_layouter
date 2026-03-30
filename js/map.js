@@ -2,7 +2,7 @@ import { state, getActiveProject } from './config.js';
 
 export let map;
 export let currentBaseLayer;
-let satelliteLayer, terrainLayer, darkLayer;
+let satelliteLayer, terrainLayer, darkLayer, roadmapLayer; // V8 Roadmap Added
 let userLocationMarker, accuracyCircle;
 export let isGPSActive = false;
 let watchId = null;
@@ -22,9 +22,22 @@ export function initMap() {
     satelliteLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 22, detectRetina: true });
     terrainLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}', { maxZoom: 22, detectRetina: true });
     darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 22, subdomains: 'abcd' });
+    
+    // V8: The Blueprint Ghost Layer (Roads only, transparent background)
+    roadmapLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', { maxZoom: 22, opacity: 0.65, detectRetina: true });
 
     currentBaseLayer = satelliteLayer.addTo(map);
     updateGPSIndicator('gray', 'Off');
+}
+
+// V8: Smart Tracing Toggle
+export function toggleSmartTrace(isActive) {
+    if (!map) return;
+    if (isActive) {
+        roadmapLayer.addTo(map);
+    } else {
+        map.removeLayer(roadmapLayer);
+    }
 }
 
 export function lockArea() {
@@ -33,7 +46,6 @@ export function lockArea() {
     const currentZoom = map.getZoom();
     const currentCenter = map.getCenter();
 
-    // FIX: Route memory to Active Project so data is never lost
     const activeProject = getActiveProject();
     if (activeProject) {
         activeProject.isAreaLocked = true;
@@ -41,7 +53,6 @@ export function lockArea() {
         activeProject.mapCenterLng = currentCenter.lng;
         activeProject.mapZoom = currentZoom;
         
-        // FIX: Convert bounds to pure array so it survives JSON storage
         activeProject.mapBounds = [
             [currentBounds.getSouthWest().lat, currentBounds.getSouthWest().lng],
             [currentBounds.getNorthEast().lat, currentBounds.getNorthEast().lng]
@@ -81,10 +92,8 @@ function startGPS() {
         (position) => {
             const lat = position.coords.latitude; const lng = position.coords.longitude; const accuracy = Math.round(position.coords.accuracy);
             state.gps.lat = lat; state.gps.lng = lng; state.gps.accuracy = accuracy;
-
             if (!state.ui.hasPannedToGPS && accuracy <= 100) { map.flyTo([lat, lng], 18, { duration: 1.5 }); state.ui.hasPannedToGPS = true; }
             updateLocationMarker(lat, lng, accuracy);
-
             if (accuracy <= 10) updateGPSIndicator('green', `${accuracy}m`);
             else if (accuracy <= 30) updateGPSIndicator('yellow', `${accuracy}m`);
             else updateGPSIndicator('red', `${accuracy}m`);

@@ -1,11 +1,11 @@
 /**
- * MAP LAYOUT DRAFTER - Main Controller (V7.1 Bulletproof Master)
- * Cures: Screen Freezes, Blur Fog, and Android Back-Button Crashes.
+ * MAP LAYOUT DRAFTER - Main Controller (V8 Master)
+ * Features: Ultra-Slim UI Hooks, Ghost-Menu Fixes, and Draft ID Prompts.
  */
 
 import { state, CATEGORIES, TOOLS, getActiveProject } from './config.js';
-import { initMap, lockArea, map, toggleGPS } from './map.js';
-import { initSymbols, redrawAllFeatures } from './symbol.js'; 
+import { initMap, lockArea, map, toggleGPS, toggleSmartTrace } from './map.js';
+import { initSymbols, redrawAllFeatures, deselectAll } from './symbol.js'; 
 import * as Exporter from './export.js'; 
 import { loadDraftLocally, clearDraft, saveDraftLocally } from './storage.js';
 import { switchProject, renameProject, deleteProject } from './projectManager.js';
@@ -23,52 +23,33 @@ console.error = function(...args) {
     originalError.apply(console, args);
 };
 
-// Modals State
 let pendingTargetProjectId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     
-    // ELITE FIX: Prevent Android hardware back-button from crashing the WebView via alerts
+    // Non-Blocking Back Button Security
     window.history.pushState(null, null, window.location.href);
     window.onpopstate = function () {
         window.history.pushState(null, null, window.location.href);
         saveDraftLocally(); 
-        
-        // Show non-blocking Toast instead of thread-blocking alert()
-        const existingToast = document.getElementById('back-toast');
-        if (existingToast) existingToast.remove();
-        
         const toast = document.createElement('div');
-        toast.id = 'back-toast';
-        toast.className = 'absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-5 py-3 rounded-full text-xs font-bold z-[9999] shadow-lg text-center transition-opacity duration-300 opacity-0 pointer-events-none';
+        toast.className = 'absolute bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-5 py-3 rounded-full text-xs font-bold z-[9999] shadow-lg text-center transition-opacity duration-300';
         toast.innerText = 'App navigation protected. Use the on-screen menus.';
         document.body.appendChild(toast);
-        
-        setTimeout(() => toast.classList.remove('opacity-0'), 10);
-        setTimeout(() => {
-            toast.classList.add('opacity-0');
-            setTimeout(() => toast.remove(), 300);
-        }, 2000);
+        setTimeout(() => { toast.classList.add('opacity-0'); setTimeout(() => toast.remove(), 300); }, 2000);
     };
 
-    // ELITE FIX: Force save to Omni-Vault if the user manually closes the browser tab
-    window.addEventListener('beforeunload', () => {
-        saveDraftLocally();
-    });
+    window.addEventListener('beforeunload', () => saveDraftLocally());
 
-    // Prevent Android zoom freezing
     document.addEventListener('touchmove', (e) => {
-        if (e.scale && e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) { 
-            e.preventDefault(); 
-        } 
+        if (e.scale && e.scale !== 1 && state.ui.currentCategory !== CATEGORIES.HAND) e.preventDefault(); 
     }, { passive: false });
 
-    // 1. Load Data & Boot Engines
+    // Boot Engines
     const hasSavedData = loadDraftLocally();
     initMap();
     initSymbols();
     
-    // 2. Re-apply UI Preferences
     if (state.ui.isDarkMode) {
         document.body.classList.add('dark');
         const darkToggle = document.getElementById('toggle-dark-mode');
@@ -77,18 +58,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (state.ui.smokiness) {
         const slider = document.getElementById('smokiness-slider');
-        if (slider) slider.value = state.ui.smokiness;
+        if (slider) slider.value = state.ui.smokiness.toString();
         const opacity = 1 - (state.ui.smokiness / 100);
         const tilePane = document.querySelector('.leaflet-tile-pane');
         if (tilePane) tilePane.style.opacity = opacity.toString();
     }
 
-    // 3. Context-Aware Boot: Check if the *active* project has a locked area
+    // Context-Aware Boot
     const activeProject = getActiveProject();
     if (hasSavedData && activeProject.isAreaLocked) {
         document.getElementById('setup-layer').classList.add('hidden');
         document.getElementById('ui-layer').classList.remove('hidden');
-        document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId || "Unknown"} (${activeProject.name})`;
+        document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId || "Unknown"}`;
         
         lockArea();
         redrawAllFeatures(); 
@@ -96,14 +77,13 @@ document.addEventListener('DOMContentLoaded', () => {
         initPhase1Setup(); 
     }
 
-    // 4. Initialize UI Listeners
     initDockLogic();
     initUIControls();
     initProjectDrawerLogic();
 });
 
 // ==========================================
-// SETUP PHASE (Area Search & Lock)
+// SETUP PHASE
 // ==========================================
 function initPhase1Setup() {
     const btnToStepB = document.getElementById('btn-to-step-b');
@@ -112,7 +92,6 @@ function initPhase1Setup() {
     const inputArea = document.getElementById('setup-area');
     const searchInput = document.getElementById('map-search');
     const btnSearch = document.getElementById('btn-search');
-    const suggestionsBox = document.getElementById('search-suggestions');
 
     const checkInputs = () => {
         if (!btnToStepB) return;
@@ -130,16 +109,12 @@ function initPhase1Setup() {
         btnToStepB.addEventListener('click', () => {
             document.getElementById('setup-step-a').classList.add('hidden');
             document.getElementById('setup-step-b').classList.remove('hidden');
-            
-            // ELITE FIX: Completely overwrite the class tree to guarantee fog removal
             const setupLayer = document.getElementById('setup-layer');
-            if(setupLayer) {
-                setupLayer.className = "absolute inset-0 z-[70] pointer-events-none flex flex-col items-center justify-center";
-            }
+            if(setupLayer) setupLayer.className = "absolute inset-0 z-[70] pointer-events-none flex flex-col items-center justify-center";
         });
     }
     
-    if (btnSearch && searchInput && suggestionsBox) {
+    if (btnSearch && searchInput) {
         btnSearch.addEventListener('click', async () => {
             const query = searchInput.value.trim();
             if (!query) return;
@@ -147,36 +122,15 @@ function initPhase1Setup() {
                 btnSearch.innerText = "...";
                 const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
                 const data = await response.json();
-                suggestionsBox.innerHTML = ''; 
                 if (data.length > 0) {
-                    data.forEach(place => {
-                        const li = document.createElement('li');
-                        li.className = 'p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer text-sm border-b border-gray-100 dark:border-gray-700 last:border-0 text-gray-700 dark:text-gray-200';
-                        li.innerText = place.display_name;
-                        li.onclick = () => {
-                            map.flyTo([place.lat, place.lon], 17, { duration: 1.5 });
-                            suggestionsBox.classList.add('hidden');
-                            searchInput.value = place.name || place.display_name.split(',')[0];
-                        };
-                        suggestionsBox.appendChild(li);
-                    });
-                    suggestionsBox.classList.remove('hidden');
-                } else {
-                    suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">No results found.</li>';
-                    suggestionsBox.classList.remove('hidden');
+                    map.flyTo([data[0].lat, data[0].lon], 17, { duration: 1.5 });
+                    searchInput.value = data[0].name || data[0].display_name.split(',')[0];
                 }
             } catch (err) {
-                suggestionsBox.innerHTML = '<li class="p-3 text-sm text-red-500">Network Error.</li>';
-                suggestionsBox.classList.remove('hidden');
+                console.error("Search failed");
             } finally {
                 btnSearch.innerText = "Search";
             }
-        });
-
-        const searchContainer = searchInput.parentElement.parentElement;
-        if (searchContainer) searchContainer.addEventListener('click', (e) => e.stopPropagation());
-        document.addEventListener('click', () => {
-            if (!suggestionsBox.classList.contains('hidden')) suggestionsBox.classList.add('hidden');
         });
     }
 
@@ -187,7 +141,7 @@ function initPhase1Setup() {
             state.ui.phase = 2;
 
             const activeProject = getActiveProject();
-            document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId} (${activeProject.name})`;
+            document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
 
             lockArea(); 
             saveDraftLocally();
@@ -205,6 +159,7 @@ function initDockLogic() {
     const dockButtons = document.querySelectorAll('.fab-cat-btn');
     dockButtons.forEach(btn => {
         btn.addEventListener('click', (e) => {
+            deselectAll(); // V8 feature: Deselect objects when changing tools
             dockButtons.forEach(b => {
                 b.classList.remove('bg-blue-100', 'text-blue-600', 'dark:bg-blue-900/40', 'dark:text-blue-400');
                 b.classList.add('text-gray-600', 'dark:text-gray-300');
@@ -247,11 +202,12 @@ function populateSubMenu(category) {
             <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LINE_FREEHAND}">Draw</button>
         `;
     } else if (category === CATEGORIES.LANDMARK) {
+        // V8: Replaced with Big 4 Geometry
         toolsHTML = `
-            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_TAP}">Tap</button>
-            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_TEMPLE}">Temple</button>
             <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_SQUARE}">Square</button>
-            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_CUSTOM}">(+)</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_CIRCLE}">Circle</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_PENTAGON}">Pentagon</button>
+            <button class="tool-btn px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-xl border-2 border-transparent text-xs font-bold dark:text-white active:scale-90 transition-all" data-tool="${TOOLS.LM_HEXAGON}">Hexagon</button>
         `;
     }
 
@@ -283,31 +239,43 @@ function setActiveTool(toolId) {
 // ==========================================
 function initUIControls() {
     
-    const brandingPill = document.getElementById('branding-pill');
-    let tapCount = 0; let tapTimer;
-    if (brandingPill) {
-        brandingPill.addEventListener('click', () => {
-            tapCount++; clearTimeout(tapTimer);
-            if (tapCount >= 5) {
-                tapCount = 0;
-                if(confirm("DEVELOPER MODE: Download internal error logs?")) {
-                    const blob = new Blob([window.appLogs.join('\n') || "No errors."], { type: 'text/plain' });
-                    const link = document.createElement("a");
-                    link.href = URL.createObjectURL(blob);
-                    link.download = `LMD_Logs_${Date.now()}.txt`;
-                    link.click();
-                }
-            }
-            tapTimer = setTimeout(() => tapCount = 0, 1500);
-        });
-    }
-
     document.getElementById('toggle-dark-mode').addEventListener('change', (e) => {
         state.ui.isDarkMode = e.target.checked; 
         if (e.target.checked) document.body.classList.add('dark');
         else document.body.classList.remove('dark');
         saveDraftLocally();
     });
+
+    // --- V8 SMART TRACING EYE LOGIC STARTS HERE ---
+    const traceToggle = document.getElementById('toggle-smart-trace');
+    const eyeContainer = document.getElementById('smart-trace-toggle-container');
+    const eyeBtn = document.getElementById('btn-smart-eye');
+    const eyeText = document.getElementById('eye-text');
+
+    if (traceToggle && eyeContainer && eyeBtn) {
+        traceToggle.addEventListener('change', (e) => {
+            if(e.target.checked) {
+                eyeContainer.classList.remove('hidden');
+            } else {
+                eyeContainer.classList.add('hidden');
+                if(state.ui.isTracingOn) eyeBtn.click(); // Auto-turn off if master switch is killed
+            }
+        });
+
+        eyeBtn.addEventListener('click', () => {
+            state.ui.isTracingOn = !state.ui.isTracingOn;
+            toggleSmartTrace(state.ui.isTracingOn);
+            
+            if(state.ui.isTracingOn) {
+                eyeBtn.classList.add('bg-blue-100', 'border', 'border-blue-400');
+                eyeText.innerText = "Tracing Guide On";
+            } else {
+                eyeBtn.classList.remove('bg-blue-100', 'border', 'border-blue-400');
+                eyeText.innerText = "Tracing Guide Off";
+            }
+        });
+    }
+    // --- V8 SMART TRACING EYE LOGIC ENDS HERE ---
 
     const slider = document.getElementById('smokiness-slider');
     if (slider) {
@@ -319,7 +287,7 @@ function initUIControls() {
         });
         slider.addEventListener('change', () => saveDraftLocally());
     }
-
+    
     document.getElementById('btn-undo').addEventListener('click', () => {
         const activeProject = getActiveProject();
         if (activeProject.undoStack.length > 0) {
@@ -357,16 +325,22 @@ function initUIControls() {
     document.getElementById('export-csv').addEventListener('click', () => { if (Exporter.generateCSV) Exporter.generateCSV(); });
     document.getElementById('export-json').addEventListener('click', () => { if (Exporter.generateJSON) Exporter.generateJSON(); });
 
-    document.getElementById('btn-emergency-reset').addEventListener('click', () => {
-        if(confirm("CRITICAL WARNING: This eradicates the Omni-Vault memory permanently. Proceed?")) clearDraft();
-    });
-
     document.getElementById('btn-close-inspector').addEventListener('click', () => {
         document.getElementById('inspector-panel').classList.add('scale-95', 'opacity-0', 'pointer-events-none');
         setTimeout(() => document.getElementById('inspector-panel').classList.add('hidden'), 200);
         document.getElementById('ui-overlay').classList.add('opacity-0', 'pointer-events-none');
+        deselectAll(); // Clean up selection box
+    });
+
+    // V8: Global Click-Away for popovers
+    document.addEventListener('click', (e) => {
+        const popover = document.getElementById('popover-project-actions');
+        if (popover && !e.target.closest('.project-menu-trigger') && !e.target.closest('#popover-project-actions')) {
+            popover.classList.add('hidden');
+        }
     });
 }
+
 // ==========================================
 // PROJECT DRAWER LOGIC
 // ==========================================
@@ -385,25 +359,17 @@ function initProjectDrawerLogic() {
             renderProjectCards(); 
             settingsMenu.classList.remove('translate-x-full');
             uiOverlay.classList.remove('hidden');
-            
-            // Allow display:block to execute before fading in
             setTimeout(() => {
                 uiOverlay.classList.remove('opacity-0', 'pointer-events-none');
                 uiOverlay.classList.add('opacity-100', 'pointer-events-auto');
             }, 10);
         } else {
             settingsMenu.classList.add('translate-x-full');
-            
-            // ELITE FIX: Eradicate invisible shield causing screen freezes
             uiOverlay.classList.remove('opacity-100', 'pointer-events-auto');
             uiOverlay.classList.add('opacity-0', 'pointer-events-none');
             popover.classList.add('hidden'); 
-            
-            // Crucial: Put 'hidden' back after the fade animation finishes
             setTimeout(() => {
-                if (settingsMenu.classList.contains('translate-x-full')) {
-                    uiOverlay.classList.add('hidden');
-                }
+                if (settingsMenu.classList.contains('translate-x-full')) uiOverlay.classList.add('hidden');
             }, 300);
         }
     };
@@ -417,9 +383,18 @@ function initProjectDrawerLogic() {
     });
 
     document.getElementById('btn-cancel-switch').addEventListener('click', closeSwitchModal);
+    
+    // V8: Draft Credentials Prompt
     document.getElementById('btn-confirm-switch').addEventListener('click', () => {
         if (pendingTargetProjectId) {
+            const proj = state.projects[pendingTargetProjectId];
+            if (!proj.isAreaLocked) {
+                const newId = prompt("Enter Area / Block ID for this new Draft:", "Area_01");
+                if (!newId) { closeSwitchModal(); return; } // Cancelled
+                state.user.hlbId = newId.trim();
+            }
             switchProject(pendingTargetProjectId);
+            document.getElementById('display-area-id').innerText = `Area: ${state.user.hlbId}`;
             renderProjectCards(); 
         }
         closeSwitchModal();
@@ -446,7 +421,6 @@ function initProjectDrawerLogic() {
         popover.classList.add('hidden');
     });
 }
-
 export function renderProjectCards() {
     const container = document.getElementById('project-list-container');
     if (!container) return;
@@ -482,14 +456,13 @@ export function renderProjectCards() {
     document.querySelectorAll('.project-card').forEach(card => {
         card.addEventListener('click', (e) => {
             if (e.target.classList.contains('project-menu-trigger')) return; 
-            
             const targetId = card.getAttribute('data-id');
             if (targetId !== state.activeProjectId && state.projects[targetId].isAreaLocked) {
                 pendingTargetProjectId = targetId;
                 openSwitchModal(state.projects[targetId].name);
             } else if (targetId !== state.activeProjectId && !state.projects[targetId].isAreaLocked) {
-                switchProject(targetId);
-                renderProjectCards();
+                pendingTargetProjectId = targetId;
+                document.getElementById('btn-confirm-switch').click(); // Auto-trigger the ID prompt logic
             }
         });
     });
@@ -499,12 +472,10 @@ export function renderProjectCards() {
             e.stopPropagation();
             pendingTargetProjectId = e.currentTarget.getAttribute('data-id');
             const popover = document.getElementById('popover-project-actions');
-            
             const rect = e.currentTarget.getBoundingClientRect();
             popover.style.top = `${rect.bottom + 5}px`;
             popover.style.right = `${window.innerWidth - rect.right}px`;
             popover.style.left = 'auto'; 
-            
             popover.classList.remove('hidden');
         });
     });
@@ -516,10 +487,7 @@ function openSwitchModal(projectName) {
     overlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
     overlay.classList.add('opacity-100', 'z-[110]', 'pointer-events-auto'); 
     modal.classList.remove('hidden');
-    
-    setTimeout(() => {
-        modal.classList.remove('scale-95', 'opacity-0');
-    }, 10);
+    setTimeout(() => modal.classList.remove('scale-95', 'opacity-0'), 10);
 }
 
 function closeSwitchModal() {
@@ -530,7 +498,6 @@ function closeSwitchModal() {
     setTimeout(() => {
         modal.classList.add('hidden');
         overlay.classList.remove('z-[110]');
-        // Only hide overlay if drawer isn't active
         const settingsMenu = document.getElementById('settings-menu');
         if (settingsMenu && settingsMenu.classList.contains('translate-x-full')) {
              overlay.classList.add('hidden', 'opacity-0', 'pointer-events-none');

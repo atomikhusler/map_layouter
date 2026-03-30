@@ -1,29 +1,22 @@
 /**
- * MAP LAYOUT DRAFTER - Elite Export Engine (V7 Master)
- * Features: Print-Mode Viewport, Metric Scale Bar, Line Length Math & Multi-Project Routing.
+ * MAP LAYOUT DRAFTER - Elite Export Engine (V8 Master)
+ * Features: Pure White Schematic Canvas, Dynamic Bounding Boxes, Metric Scale Bar.
  */
 
 import { state, CATEGORIES, getActiveProject } from './config.js';
-import { map } from './map.js';
+import { map, currentBaseLayer, toggleSmartTrace } from './map.js';
 
-// ==========================================
-// 1. DEPENDENCY & HELPER ENGINES
-// ==========================================
 async function ensureHTML2Canvas() {
     if (window.html2canvas) return true;
     return new Promise((resolve) => {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
         script.onload = () => resolve(true);
-        script.onerror = () => {
-            alert("Network required for first-time PNG/PDF engine initialization.");
-            resolve(false);
-        };
+        script.onerror = () => { alert("Network required for first-time export initialization."); resolve(false); };
         document.head.appendChild(script);
     });
 }
 
-// Haversine Math for Polyline distance in meters
 function calculateLineLengthMeters(coords) {
     let totalMeters = 0;
     for (let i = 0; i < coords.length - 1; i++) {
@@ -32,7 +25,6 @@ function calculateLineLengthMeters(coords) {
     return Math.round(totalMeters);
 }
 
-// Injects a physical Scale Bar into the DOM just for the picture
 function injectGraphicScaleBar() {
     const scaleDiv = document.createElement('div');
     scaleDiv.id = 'export-scale-bar';
@@ -40,16 +32,14 @@ function injectGraphicScaleBar() {
     scaleDiv.style.bottom = '30px';
     scaleDiv.style.right = '30px';
     scaleDiv.style.zIndex = '9999';
-    scaleDiv.style.backgroundColor = 'rgba(255, 255, 255, 0.95)';
+    scaleDiv.style.backgroundColor = '#ffffff';
     scaleDiv.style.border = '2px solid #000';
     scaleDiv.style.padding = '8px 15px';
     scaleDiv.style.fontFamily = 'monospace';
     scaleDiv.style.fontWeight = '900';
     scaleDiv.style.fontSize = '16px';
     scaleDiv.style.color = '#000';
-    scaleDiv.style.boxShadow = '5px 5px 0px rgba(0,0,0,0.2)';
     
-    // Calculate real-world distance of 150 pixels at map center
     const center = map.getCenter();
     const pt1 = map.latLngToContainerPoint(center);
     const pt2 = L.point(pt1.x + 150, pt1.y);
@@ -66,7 +56,7 @@ function injectGraphicScaleBar() {
 }
 
 // ==========================================
-// 2. THE PRINT-MODE PNG CAPTURE ENGINE
+// THE V8 WHITE CANVAS CAPTURE ENGINE
 // ==========================================
 export async function generatePNG() {
     const activeProject = getActiveProject();
@@ -80,118 +70,110 @@ export async function generatePNG() {
 
     const mapContainer = document.getElementById('map');
     
-    // SAVE ORIGINAL STATE
-    const originalWidth = mapContainer.style.width;
-    const originalHeight = mapContainer.style.height;
-    const originalPos = mapContainer.style.position;
+    // 1. Calculate Exact Bounding Box of all drawn features
+    const featureGroup = L.featureGroup();
+    activeProject.features.forEach(f => {
+        if (f.category === CATEGORIES.LINE) L.polyline(f.coordinates).addTo(featureGroup);
+        else L.marker(f.coordinates).addTo(featureGroup);
+    });
     
-    // THE ELITE FIX: Force Print-Mode Viewport (1200x1200px High-Res Square)
-    mapContainer.style.position = 'absolute';
-    mapContainer.style.width = '1200px';
-    mapContainer.style.height = '1200px';
+    const drawingBounds = featureGroup.getBounds();
     
-    // Force Leaflet SVG Pane to recalculate lines for the new geometry
-    map.invalidateSize(); 
+    // 2. Save Original State
+    const originalCenter = map.getCenter();
+    const originalZoom = map.getZoom();
+    const originalMaxBounds = map.options.maxBounds;
     
-    // Hide Tile Pane to prevent CORS poisoning & background noise
-    const tilePane = document.querySelector('.leaflet-tile-pane');
-    const originalDisplay = tilePane ? tilePane.style.display : '';
-    if (tilePane) tilePane.style.display = 'none';
+    // 3. Initiate The White Canvas Mode
+    // Temporarily unrestrict the map so we can frame the photo perfectly
+    map.setMaxBounds(null);
+    if(drawingBounds.isValid()) {
+        // Zoom out to fit the entire drawing with a 10% padding margin
+        map.fitBounds(drawingBounds, { padding: [50, 50], animate: false });
+    }
+    
+    // Physically strip the Google Map Tiles and set background to pure white
+    if (currentBaseLayer) map.removeLayer(currentBaseLayer);
+    toggleSmartTrace(false); // Turn off blue helper lines
+    mapContainer.style.backgroundColor = '#ffffff';
 
+    // Deselect any currently selected bounding boxes so they don't print
+    document.querySelectorAll('.draft-symbol').forEach(el => el.classList.remove('symbol-selected'));
+    
     const scaleDOM = injectGraphicScaleBar();
     
-    // Wait exactly 400ms for DOM layout and Leaflet SVG re-rendering to stabilize
-    await new Promise(r => setTimeout(r, 400));
+    // Wait for Leaflet to re-calculate vector SVG lines
+    await new Promise(r => setTimeout(r, 600));
 
     try {
         const canvas = await window.html2canvas(mapContainer, {
             useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#ffffff', // Force pristine white paper
-            scale: 2, // 2400x2400 final output
+            allowTaint: false,
+            backgroundColor: '#ffffff', // Guarantee white
+            scale: 2, 
             logging: false
         });
 
-        // RESTORE ORIGINAL STATE
-        if (tilePane) tilePane.style.display = originalDisplay;
-        mapContainer.style.position = originalPos;
-        mapContainer.style.width = originalWidth;
-        mapContainer.style.height = originalHeight;
+        // 4. RESTORE ORIGINAL STATE INSTANTLY
+        if (currentBaseLayer) currentBaseLayer.addTo(map);
+        if (state.ui.isTracingOn) toggleSmartTrace(true);
+        mapContainer.style.backgroundColor = '';
         if (scaleDOM) scaleDOM.remove();
-        map.invalidateSize(); 
+        
+        map.setMaxBounds(originalMaxBounds);
+        map.setView(originalCenter, originalZoom, { animate: false });
         
         return canvas.toDataURL('image/png');
     } catch (err) {
         console.error("Canvas capture failed:", err);
-        if (tilePane) tilePane.style.display = originalDisplay;
-        mapContainer.style.position = originalPos;
-        mapContainer.style.width = originalWidth;
-        mapContainer.style.height = originalHeight;
+        if (currentBaseLayer) currentBaseLayer.addTo(map);
+        mapContainer.style.backgroundColor = '';
         if (scaleDOM) scaleDOM.remove();
-        map.invalidateSize();
-        alert("Failed to capture map image. Check developer logs.");
+        map.setMaxBounds(originalMaxBounds);
+        map.setView(originalCenter, originalZoom, { animate: false });
         return null;
     }
 }
 
-// ==========================================
-// 3. THE MULTI-PAGE PDF ENGINE WITH METRICS
-// ==========================================
 export async function generatePDF() {
     const activeProject = getActiveProject();
-    if (activeProject.features.length === 0) {
-        alert("No data to export! Please draft the layout first.");
-        return;
-    }
-
-    if (!window.jspdf) {
-        alert("PDF Engine failed to load. Check internet connection for initial load.");
-        return;
-    }
+    if (activeProject.features.length === 0) return alert("No data to export!");
+    if (!window.jspdf) return alert("PDF Engine failed to load.");
 
     const exportBtn = document.getElementById('export-pdf');
     let originalText = "PDF";
-    if (exportBtn) {
-        originalText = exportBtn.innerHTML;
-        exportBtn.innerHTML = "Generating...";
-    }
+    if (exportBtn) { originalText = exportBtn.innerHTML; exportBtn.innerHTML = "Rendering CAD..."; }
 
     const mapImageStr = await generatePNG();
-    if (!mapImageStr) {
-        if (exportBtn) exportBtn.innerHTML = originalText;
-        return;
-    }
+    if (!mapImageStr) { if (exportBtn) exportBtn.innerHTML = originalText; return; }
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
-    // --- PAGE 1: The Official Drafted Map ---
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.setTextColor(30, 58, 138); 
-    doc.text("OFFICIAL LAYOUT MAP", 105, 20, { align: "center" });
+    doc.text("OFFICIAL SCHEMATIC LAYOUT", 105, 20, { align: "center" });
     
     doc.setFontSize(12);
     doc.setTextColor(75, 85, 99);
     doc.text(`Area / Block ID: ${state.user.hlbId || "UNSPECIFIED"} | Project: ${activeProject.name}`, 105, 28, { align: "center" });
 
-    // Inject 1200x1200px Image into A4 (180mm x 180mm perfect square)
+    // The image is now a perfect white-background vector representation
     doc.addImage(mapImageStr, 'PNG', 15, 35, 180, 180);
 
-    // Footer Metadata
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.text(`Drafter Name/ID: ${state.user.enumeratorName || "Unknown"}`, 15, 230);
     doc.text(`Date Drafted: ${new Date().toLocaleDateString()}`, 15, 236);
     doc.text(`Total Elements: ${activeProject.features.length}`, 15, 242);
 
-    // --- PAGE 2+: The Feature Data & Measurement Registry ---
+    // Page 2: Feature Registry
     doc.addPage();
     doc.setFont("helvetica", "bold");
     doc.setFontSize(16);
     doc.text("LAYOUT FEATURE REGISTRY", 105, 20, { align: "center" });
 
-    // Table Headers
     doc.setLineWidth(0.5);
     doc.line(15, 30, 195, 30);
     doc.setFontSize(10);
@@ -205,24 +187,20 @@ export async function generatePDF() {
     let yPos = 48;
 
     activeProject.features.forEach((f, index) => {
-        if (yPos > 270) {
-            doc.addPage();
-            yPos = 20; 
-        }
+        if (yPos > 270) { doc.addPage(); yPos = 20; }
 
         let cleanName = f.label ? f.label.replace(/\[|\]/g, '') : "-";
-        let coords = "";
-        let details = "";
+        let coords = ""; let details = "";
 
         if (f.category === CATEGORIES.BUILDING) {
-            details = `Bldg ${f.bldgNo} | Houses: ${f.houseCount} | Scale: ${f.scale}x`;
+            details = `Bldg ${f.bldgNo} | Houses: ${f.houseCount} | Scale: ${f.scale.toFixed(1)}x`;
             coords = `${f.coordinates[0].toFixed(5)}, ${f.coordinates[1].toFixed(5)}`;
         } else if (f.category === CATEGORIES.LINE) {
             const length = calculateLineLengthMeters(f.coordinates);
             details = `${cleanName} | Length: ~${length} Meters`;
             coords = `[Path: ${f.coordinates.length} Nodes]`;
         } else {
-            details = `${cleanName} | Scale: ${f.scale}x`;
+            details = `${cleanName} | Scale: ${f.scale.toFixed(1)}x`;
             coords = `${f.coordinates[0].toFixed(5)}, ${f.coordinates[1].toFixed(5)}`;
         }
 
@@ -230,17 +208,13 @@ export async function generatePDF() {
         doc.text(f.category.toUpperCase(), 30, yPos);
         doc.text(details.substring(0, 45), 65, yPos); 
         doc.text(coords, 145, yPos);
-
         yPos += 8;
     });
 
-    doc.save(`Layout_Map_${state.user.hlbId || "Draft"}_${activeProject.name.replace(/\s+/g, '')}.pdf`);
+    doc.save(`Schematic_${state.user.hlbId || "Draft"}_${activeProject.name.replace(/\s+/g, '')}.pdf`);
     if (exportBtn) exportBtn.innerHTML = originalText;
 }
 
-// ==========================================
-// 4. DATA EXPORT (CSV & JSON) WITH METRICS
-// ==========================================
 export function generateCSV() {
     const activeProject = getActiveProject();
     if (activeProject.features.length === 0) return alert("No data to export!");
@@ -278,7 +252,6 @@ export function generateJSON() {
     const activeProject = getActiveProject();
     if (activeProject.features.length === 0) return alert("No data to export!");
     
-    // Attach metric data before exporting
     const enrichedProject = JSON.parse(JSON.stringify(activeProject));
     enrichedProject.features.forEach(f => {
         if (f.category === CATEGORIES.LINE) {
@@ -286,13 +259,8 @@ export function generateJSON() {
         }
     });
 
-    const exportData = {
-        metadata: state.user,
-        projectData: enrichedProject
-    };
-
-    const jsonStr = JSON.stringify(exportData, null, 2);
-    triggerFileDownload(jsonStr, `GIS_Twin_${activeProject.name}.json`, 'application/json');
+    const exportData = { metadata: state.user, projectData: enrichedProject };
+    triggerFileDownload(JSON.stringify(exportData, null, 2), `GIS_Twin_${activeProject.name}.json`, 'application/json');
 }
 
 function triggerFileDownload(content, fileName, mimeType) {
